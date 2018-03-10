@@ -14,6 +14,7 @@ tf.app.flags.DEFINE_string('save_dir', 'checkpoints/small_64b_5n/', "check point
 tf.app.flags.DEFINE_string('log_dir', 'logs/cifar_128_5n/', "check point dir")
 tf.app.flags.DEFINE_integer('batch_size', 64, "batch size")
 tf.app.flags.DEFINE_float('lr', 0.1, "learning rate")
+tf.app.flags.DEFINE_string('cpu_mode', 'cpu', "cpu? or gpu?")
 
 
 def eval_predict(session, model, x,y):
@@ -38,31 +39,6 @@ def get_collection():
             print key,v
             tf.summary.histogram(key, v)
 
-    #tf.add_to_collection('stddev',stddev);
-    #tf.add_to_collection('max',tf.reduce_max(var));
-    #tf.add_to_collection('min',tf.reduce_min(var));
-    #tf.add_to_collection('mean',tf.reduce_mean(var));
-    #tf.add_to_collection('histogram',var);
-
-def get_train_op(loss,global_step):
-    lrn_rate = FLAGS.lr
-
-    trainable_variables = tf.trainable_variables()
-    grads = tf.gradients(loss, trainable_variables)
-
-
-    optimizer = tf.train.MomentumOptimizer(lrn_rate, 0.9)
-    grads = optimizer.compute_gradients(loss)
-
-    for grad, var in grads:
-        if grad is not None :
-            tf.summary.histogram(var.op.name + '/gradients', grad)
-            print grad
-    apply_gradient_op = optimizer.apply_gradients(grads, global_step=global_step)
-
-    train_ops = [apply_gradient_op] + resnet.train_ops
-    return tf.group(*train_ops)
-
 def load_session(checkpoint_dir, saver):
     session = tf.Session()
 
@@ -76,7 +52,7 @@ def load_session(checkpoint_dir, saver):
 
     return session
 
-def train(model, data_x, data_y, test_x, test_y):
+def train(model, eval_model,data_x, data_y, test_x, test_y):
 
 
     save_dir = FLAGS.save_dir
@@ -90,9 +66,7 @@ def train(model, data_x, data_y, test_x, test_y):
     global_step = tf.Variable(initial_value=0, name='global_step', trainable=False)
     merged_summary_op = tf.summary.merge_all()
 
-    loss = model.loss;
-
-    train_op = get_train_op(loss,global_step)
+    train_op = model.get_train_op(global_step, FLAGS.lr)
 
     saver = tf.train.Saver()
     session = load_session(save_dir, saver)
@@ -104,20 +78,24 @@ def train(model, data_x, data_y, test_x, test_y):
 
     while True:
         x,y = session.run([data_x,data_y])
-
-        feed_dict_train = {model.x: x, model.y:y, resnet.is_training:True}
-        i_global, _,summary_str, c_loss = session.run([global_step, train_op, merged_summary_op,loss], feed_dict=feed_dict_train)
+        print len(x), len(y)
+        feed_dict_train = {model.x: x, model.y:y}
+        i_global, _,summary_str, c_loss = session.run([global_step, train_op, merged_summary_op,model.loss], feed_dict=feed_dict_train)
+        #i_global, _,summary_str, c_loss, precision = session.run([global_step, train_op, merged_summary_op,model.loss, model.precision])
         summary_writer.add_summary(summary_str, i_global)
-        if i_global%50 == 0:
+        print "acc:",precision
+        if i_global%10 == 0:
             t_x,t_y = session.run([test_x,test_y])
-            t_acc_count, t_acc = eval_predict(session, model, x,y)
-            acc_count, acc = eval_predict(session, model, t_x,t_y)
+            #t_acc_count, t_acc = eval_predict(session, test_model, x,y)
+            acc_count, acc = eval_predict(session, test_model, t_x,t_y)
 
             summary.value.add(tag='acc', simple_value=t_acc)
             summary.value.add(tag='test acc', simple_value=acc)
             summary_writer.add_summary(summary, i_global)
 
-            print "step:",i_global,"lr:",FLAGS.lr,"loss:",c_loss, "test acc:",acc_count, acc, "train acc:",t_acc_count, t_acc
+            acc = precision
+
+            print "step:",i_global,"lr:",FLAGS.lr,"loss:",c_loss, "test acc:",acc, "train acc:",t_acc
             saver.save(session, save_path=save_path, global_step=i_global) 
             print("Saved checkpoint.")
 
@@ -156,18 +134,24 @@ def predict(model, test_x,test_y, class_names):
 
 def main(argv=None):  
 
-    #x,y=cifar_input.build_input('cifar10',FLAGS.data_dir+"data_batch*", batch_size=FLAGS.batch_size, mode='train')
-    #test_x,test_y=cifar_input.build_input('cifar10',FLAGS.data_dir+"test_batch*", batch_size=FLAGS.batch_size,mode='test')
     x,y=cifar_input.image_input(FLAGS.data_dir, batch_size=FLAGS.batch_size)
     test_x,test_y=cifar_input.image_input(FLAGS.data_dir, batch_size=FLAGS.batch_size,data_type='test')
 
-    with tf.device("/gpu:0"):
+    with tf.device("/"+FLAGS.cpu_mode+":0"):
         #model = resnet_model.ResNet('train')
-        model = resnet.SmallResNet()
+        with tf.variable_scope("resnet", reuse=None):
+            train_x=tf.placeholder(tf.float32, [None,32,32,3])
+            train_y=tf.placeholder(tf.int32, [None]) 
+            model = resnet.ResNet(train_x,train_y,num_class=10, mode='train')
+
+        with tf.variable_scope("resnet", reuse=True):
+            e_x=tf.placeholder(tf.float32, [None,32,32,3])
+            e_y=tf.placeholder(tf.int32, [None]) 
+            eval_model = resnet.ResNet(e_x,e_y,num_class=10, mode='eval')
 
     #xx,y=image_input.image_input(FLAGS.data_dir)
     #model = resnet.ResNet()
-    train(model,x,y,test_x,test_y)
+    train(model,eval_model, x,y,test_x,test_y)
 
 if __name__ == '__main__':
     tf.app.run()
