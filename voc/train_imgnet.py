@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 import resnet 
 import image_input
+#import resnet_model
 import cifar_input
 import os
 
@@ -12,6 +13,7 @@ tf.app.flags.DEFINE_string('data_dir', 'data/img_train/', 'data dir.')
 tf.app.flags.DEFINE_string('save_dir', 'checkpoints/small_64b_5n/', "check point dir")
 tf.app.flags.DEFINE_string('log_dir', 'logs/cifar_128_5n/', "check point dir")
 tf.app.flags.DEFINE_integer('batch_size', 64, "batch size")
+tf.app.flags.DEFINE_float('lr', 0.1, "learning rate")
 
 
 def eval_predict(session, model, x,y):
@@ -22,8 +24,28 @@ def eval_predict(session, model, x,y):
 
     return acc_count, acc
 
+def get_collection():
+
+    for key in ['stddev','max','min','mean']:
+        value = tf.get_collection(key)
+        print "get collect:",value	
+        for v in value:
+            tf.summary.scalar(key, v)
+
+    for key in ['histogram']:
+        value = tf.get_collection(key)
+        for v in value:
+            print key,v
+            tf.summary.histogram(key, v)
+
+    #tf.add_to_collection('stddev',stddev);
+    #tf.add_to_collection('max',tf.reduce_max(var));
+    #tf.add_to_collection('min',tf.reduce_min(var));
+    #tf.add_to_collection('mean',tf.reduce_mean(var));
+    #tf.add_to_collection('histogram',var);
+
 def get_train_op(loss,global_step):
-    lrn_rate = 0.1
+    lrn_rate = FLAGS.lr
 
     trainable_variables = tf.trainable_variables()
     grads = tf.gradients(loss, trainable_variables)
@@ -63,6 +85,8 @@ def train(model, data_x, data_y, test_x, test_y):
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
+    get_collection()
+
     global_step = tf.Variable(initial_value=0, name='global_step', trainable=False)
     merged_summary_op = tf.summary.merge_all()
 
@@ -77,6 +101,7 @@ def train(model, data_x, data_y, test_x, test_y):
     summary = tf.Summary()
     summary_writer = tf.summary.FileWriter(log_dir, session.graph)
 
+
     while True:
         x,y = session.run([data_x,data_y])
 
@@ -85,12 +110,14 @@ def train(model, data_x, data_y, test_x, test_y):
         summary_writer.add_summary(summary_str, i_global)
         if i_global%50 == 0:
             t_x,t_y = session.run([test_x,test_y])
+            t_acc_count, t_acc = eval_predict(session, model, x,y)
             acc_count, acc = eval_predict(session, model, t_x,t_y)
 
-            summary.value.add(tag='acc', simple_value=acc)
+            summary.value.add(tag='acc', simple_value=t_acc)
+            summary.value.add(tag='test acc', simple_value=acc)
             summary_writer.add_summary(summary, i_global)
 
-            print "step:",i_global,"loss:",c_loss, acc_count, acc
+            print "step:",i_global,"lr:",FLAGS.lr,"loss:",c_loss, "test acc:",acc_count, acc, "train acc:",t_acc_count, t_acc
             saver.save(session, save_path=save_path, global_step=i_global) 
             print("Saved checkpoint.")
 
@@ -106,7 +133,7 @@ def predict(model, test_x,test_y, class_names):
         os.makedirs(save_dir)
 
     loss = model.loss;
-    session = tf.Session()
+    session = tf.Session(config=tf.ConfigProto(allow_soft_placement=True, log_device_placement=True))
     saver = tf.train.Saver()
 
     try:
@@ -128,9 +155,15 @@ def predict(model, test_x,test_y, class_names):
 
 
 def main(argv=None):  
+
+    #x,y=cifar_input.build_input('cifar10',FLAGS.data_dir+"data_batch*", batch_size=FLAGS.batch_size, mode='train')
+    #test_x,test_y=cifar_input.build_input('cifar10',FLAGS.data_dir+"test_batch*", batch_size=FLAGS.batch_size,mode='test')
     x,y=cifar_input.image_input(FLAGS.data_dir, batch_size=FLAGS.batch_size)
     test_x,test_y=cifar_input.image_input(FLAGS.data_dir, batch_size=FLAGS.batch_size,data_type='test')
-    model = resnet.SmallResNet()
+
+    with tf.device("/gpu:0"):
+        #model = resnet_model.ResNet('train')
+        model = resnet.SmallResNet()
 
     #xx,y=image_input.image_input(FLAGS.data_dir)
     #model = resnet.ResNet()

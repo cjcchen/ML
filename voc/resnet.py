@@ -16,17 +16,25 @@ def get_variable(name, shape, initializer, dtype='float', trainable=True):
 def variable_summaries(var):
     with tf.name_scope('summaries'):
 	mean = tf.reduce_mean(var)
-    tf.summary.scalar('mean', mean)
+    #tf.summary.scalar('mean', mean)
 
     with tf.name_scope('stddev'):
 	stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
 
-    tf.summary.scalar('stddev', stddev)
-    tf.summary.scalar('max', tf.reduce_max(var))
-    tf.summary.scalar('min', tf.reduce_min(var))
-    tf.summary.histogram('histogram', var)
+    #tf.summary.scalar('stddev', stddev)
+    #tf.summary.scalar('max', tf.reduce_max(var))
+    #tf.summary.scalar('min', tf.reduce_min(var))
+    #print var
+    #tf.summary.histogram('histogram', var)
+    tf.add_to_collection('stddev',stddev);
+    tf.add_to_collection('max',tf.reduce_max(var));
+    tf.add_to_collection('min',tf.reduce_min(var));
+    tf.add_to_collection('mean',tf.reduce_mean(var));
+    tf.add_to_collection('histogram',var);
 
+'''
 def bn(x):
+
     x_shape = x.get_shape()
     params_shape = x_shape[-1:]
 
@@ -44,6 +52,44 @@ def bn(x):
     mean, variance = control_flow_ops.cond( is_training, lambda: (mean, variance), lambda: (moving_mean, moving_variance))
 
     return tf.nn.batch_normalization(x, mean, variance, beta, gamma, BN_EPSILON)
+'''
+
+def bn(x):
+    x_shape = x.get_shape()
+    params_shape = x_shape[-1:]
+
+    axis = list(range(len(x_shape) - 1))
+
+    beta = tf.get_variable('beta', params_shape, initializer=tf.zeros_initializer)
+    gamma = tf.get_variable('gamma', params_shape, initializer=tf.ones_initializer)
+    mean, variance = tf.nn.moments(x, axis)
+
+    mean, variance = tf.nn.moments(x, [0, 1, 2], name='moments')
+
+    moving_mean = tf.get_variable(
+		'moving_mean', params_shape, tf.float32,
+		initializer=tf.constant_initializer(0.0, tf.float32),
+		trainable=False)
+    moving_variance = tf.get_variable(
+		'moving_variance', params_shape, tf.float32,
+		initializer=tf.constant_initializer(1.0, tf.float32),
+		trainable=False)
+
+    train_ops.append(moving_averages.assign_moving_average(
+		moving_mean, mean, 0.9))
+    train_ops.append(moving_averages.assign_moving_average(
+		moving_variance, variance, 0.9))
+
+
+    #moving_mean = tf.get_variable('moving_mean', params_shape, initializer=tf.zeros_initializer, trainable=False)
+    #moving_variance = tf.get_variable('moving_variance', params_shape, initializer=tf.ones_initializer, trainable=False)
+    #train_ops.append(moving_averages.assign_moving_average( moving_mean, mean, 0.9))
+    #train_ops.append(moving_averages.assign_moving_average( moving_variance, variance, 0.9))
+
+    #mean, variance = control_flow_ops.cond( is_training, lambda: (mean, variance), lambda: (moving_mean, moving_variance))
+
+    return tf.nn.batch_normalization(x, mean, variance, beta, gamma, BN_EPSILON)
+
 
 def conv(x,ksize, output_channel, stride):
     print "conv x:",x.shape, ksize, output_channel
