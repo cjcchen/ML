@@ -77,7 +77,7 @@ def fc(x, out_d):
     print "fc:",x
     return x
 
-def get_decay(weight_decay_rate=0.002):
+def get_decay(weight_decay_rate=0.0002):
     costs = []
     for var in tf.trainable_variables():
         if var.op.name.find(r'weights') > 0:
@@ -92,11 +92,11 @@ def get_softmax_loss(x,y):
 
 def variable_summaries(var):
     with tf.name_scope('summaries'):
-	mean = tf.reduce_mean(var)
+      mean = tf.reduce_mean(var)
     #tf.summary.scalar('mean', mean)
 
     with tf.name_scope('stddev'):
-	stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+      stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
 
     tf.add_to_collection('stddev',stddev);
     tf.add_to_collection('max',tf.reduce_max(var));
