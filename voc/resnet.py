@@ -57,7 +57,7 @@ class ResNet:
         self.loss=get_softmax_loss(self.logit,self.y)
         self.predict = tf.nn.softmax(self.logit)
         tmp_pred = tf.to_int32(tf.argmax(self.predict, axis=1))
-        self.precision = tf.reduce_mean(tf.to_float(tf.equal(tmp_pred, self.y)))
+        self.precision = tf.reduce_mean(tf.to_float(tf.equal(tmp_pred, self.y)))*100
 
         with tf.variable_scope('loss'):
             variable_summaries(self.loss)
