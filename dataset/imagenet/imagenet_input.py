@@ -8,24 +8,11 @@ import os
 
 from dataset.queue import image_queue 
 
-def load_label(data_path):
-
-    cache_file = os.path.join(cache_path, 'label.dat')
-    if os.path.exists(cache_file):
-        with open(cache_file, 'rb') as fid:
-            labels = cPickle.load(fid)
-        return labels
-
-def save_label(data_path,labels):
-
-    cache_file = os.path.join(cache_path, 'label.dat')
-    with open(cache_file, 'wb') as fid:
-        cPickle.dump(labels, fid, cPickle.HIGHEST_PROTOCOL)
-
-def load_meta(meta_path):
+def load_meta(meta_dir, mode):
+    meta_path = os.path.join(meta_dir, "meta.mat")
     metadata = loadmat(meta_path, struct_as_record=False)
 
-    # ['ILSVRC2012_ID', 'WNID', 'words', 'gloss', 'num_children', 'children', 'wordnet_height', 'num_train_images']
+  # ['ILSVRC2012_ID', 'WNID', 'words', 'gloss', 'num_children', 'children', 'wordnet_height', 'num_train_images']
     synsets = np.squeeze(metadata['synsets'])
 
     data = {}
@@ -37,32 +24,39 @@ def load_meta(meta_path):
             word = str(np.squeeze(s.words))
             data[wnid] = sid
             words[sid] = word
+            if sid == 490:
+              print sid, word 
+            #print sid, wnid, word
 
-            print sid, wnid, word
+    if mode == 'val':
+      data = {}
+      meta_path = os.path.join(meta_dir, "ILSVRC2012_validation_ground_truth.txt")
+      with open(meta_path) as fd:
+        lines = fd.readlines()
+        for p, sid in enumerate(lines):
+          data[p+1] = int(sid)
 
-    '''
-    ids = np.squeeze(np.array([s.ILSVRC2012_ID for s in synsets]))
-    wnids = np.squeeze(np.array([s.WNID for s in synsets]))
-    words = np.squeeze(np.array([s.words for s in synsets]))
-    print len(wnids), wnids,ids
-    print len(words),words,ids
-    '''
     return data,words
 
-def load_data_path(data_path):
-    path_data, words= load_meta(data_path+"/meta.mat")
+def load_data_path(meta_path, data_path, mode):
+    path_data, words= load_meta(meta_path, mode)
 
     images=[]
     labels=[]
     for image_folder, label in path_data.items():
-        image_folder = data_path + image_folder +"/"
+        if mode == 'train':
+          image_folder = data_path + image_folder +"/"
+        elif mode == 'val':
+          image_folder = data_path + "ILSVRC2012_val_%08d.JPEG" % int(image_folder)
+
         if (os.path.exists(image_folder)):
-            files = os.listdir(image_folder)
-            if(len(files)==0):
-                continue
-            print image_folder, label, words[label]
-            images+=[ image_folder + f for f in files]
-            labels+=[label]*len(files)
+            #print image_folder, label, words[label]
+            images+=[image_folder]
+            labels+=[label]
+
+
+    assert len(images) >0
+    #print images,labels
     return images, labels, words
 
 def get_data(data_files, labels):
@@ -91,18 +85,26 @@ def process_image(image, image_size, data_type):
      image = tf.image.per_image_standardization(image)
      return image;
 
-def image_input(data_path, batch_size = 2, data_type='train'):
-    images, labels, words = load_data_path(data_path)
+def image_input(meta_path, data_path, batch_size = 2, mode='train'):
+    images, labels, words = load_data_path(meta_path, data_path, mode)
+    print [[images[i], labels[i], words[labels[i]]] for i in xrange(10)]
     image, label = get_data(images, labels)
-    image = process_image(image, 224, data_type)
-    return image_queue.image_queue(image, label, batch_size, data_type='train')
+    image = process_image(image, 224, mode)
+    return image_queue.image_queue(image, label, batch_size, data_type=mode), words
 
 
 if __name__ == '__main__':
-    data,label = image_input(sys.argv[1], batch_size=10)
+    with tf.device("/cpu:0"):
+      print sys.argv[1], sys.argv[2], sys.argv[3]
+      [data,label],words = image_input(sys.argv[1], sys.argv[2], batch_size=10, mode=sys.argv[3])
 
-    with tf.Session() as sess:
-        sess.run(tf.initialize_all_variables())
-        threads = tf.train.start_queue_runners(sess)
-        d,label=sess.run([data,label])
-        print d.shape, label
+      with tf.Session() as sess:
+          sess.run(tf.initialize_all_variables())
+          threads = tf.train.start_queue_runners(sess)
+          d,label=sess.run([data,label])
+          for i in xrange(len(label)):
+            print d[i].shape, label[i], words[label[i]]
+            import matplotlib.pyplot as plt
+            import matplotlib.image as mpimg
+            imgplot = plt.imshow(d[i])
+            plt.show() 
