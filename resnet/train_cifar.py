@@ -52,19 +52,19 @@ def main(argv=None):
       eval()
     else:
       x,y=cifar_input.image_input(FLAGS.data_dir, batch_size=FLAGS.batch_size)
-      test_x,test_y=cifar_input.image_input(FLAGS.data_dir, batch_size=FLAGS.batch_size,data_type='test')
+      test_x,test_y=cifar_input.image_input(FLAGS.data_dir, batch_size=FLAGS.batch_size,mode='eval')
 
       with tf.device("/"+FLAGS.cpu_mode+":0"):
-          #model = resnet_model.ResNet('train')
+          images=tf.placeholder(tf.float32, [None,32,32,3])
+          labels=tf.placeholder(tf.int32, [None]) 
+          e_x=tf.placeholder(tf.float32, [None,32,32,3])
+          e_y=tf.placeholder(tf.int32, [None]) 
           with tf.variable_scope("resnet", reuse=None):
-              train_x=tf.placeholder(tf.float32, [None,32,32,3])
-              train_y=tf.placeholder(tf.int32, [None]) 
-              model = resnet.ResNet(train_x,train_y,num_class=10, mode='train')
+              model = resnet.ResNet(images,labels,num_class=10, mode='train')
 
           with tf.variable_scope("resnet", reuse=True):
-              e_x=tf.placeholder(tf.float32, [None,32,32,3])
-              e_y=tf.placeholder(tf.int32, [None]) 
-              eval_model = resnet.ResNet(e_x,e_y,num_class=10, mode='eval')
+              eval_model = resnet.ResNet(images, labels, num_class=10, mode='eval')
+
       network_train.train(model,eval_model, x,y,test_x,test_y)
 
 if __name__ == '__main__':

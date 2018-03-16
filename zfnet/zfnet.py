@@ -29,36 +29,43 @@ class ZFNet:
             conv2_x = component.max_pool(conv2_x,3,stride=2)
 
         with tf.variable_scope('conv3'):
+            component.variable_summaries(conv2_x)
             conv3_x = component.conv(conv2_x,ksize=3,output_channel=384,stride=1)
             conv3_x = component.bn(conv3_x,self.mode, self.train_ops)
             conv3_x = component.relu(conv3_x)
 
         with tf.variable_scope('conv4'):
+            component.variable_summaries(conv3_x)
             conv4_x = component.conv(conv3_x,ksize=3,output_channel=384,stride=1)
             conv4_x = component.bn(conv4_x,self.mode, self.train_ops)
             conv4_x = component.relu(conv4_x)
 
         with tf.variable_scope('conv5'):
+            component.variable_summaries(conv4_x)
             conv5_x = component.conv(conv4_x,ksize=3,output_channel=256,stride=1)
             conv5_x = component.bn(conv5_x,self.mode, self.train_ops)
             conv5_x = component.relu(conv5_x)
             conv5_x = component.max_pool(conv5_x,3,stride=2)
+
         p = conv5_x.get_shape().as_list()
         flat_shape = p[1]*p[2]*p[3]
         with tf.variable_scope('fc1'):
             fc1_x = tf.reshape(conv5_x, [-1, flat_shape])
             #fc1_x = component.bn(fc1_x,self.mode, self.train_ops)
-            #fc1_x = component.relu(fc1_x)
+            component.variable_summaries(fc1_x)
+            fc1_x = component.relu(fc1_x)
 
         with tf.variable_scope('fc2'):
             fc2_x = component.fc(fc1_x,4096)
             #fc2_x = component.bn(fc2_x,self.mode, self.train_ops)
-            #fc2_x = component.relu(fc2_x)
+            component.variable_summaries(fc2_x)
+            fc2_x = component.relu(fc2_x)
 
         with tf.variable_scope('fc3'):
             fc3_x = component.fc(fc2_x,self.num_class)
             #fc3_x = component.bn(fc3_x,self.mode, self.train_ops)
-            #fc3_x = component.relu(fc3_x)
+            component.variable_summaries(fc3_x)
+            fc3_x = component.relu(fc3_x)
 
 
         self.logit = fc3_x

@@ -157,7 +157,6 @@ def main(argv=None):
       test_x,test_y=cifar_input.image_input(FLAGS.data_dir, batch_size=FLAGS.batch_size,data_type='test')
 
       with tf.device("/"+FLAGS.cpu_mode+":0"):
-        #model = resnet_model.ResNet('train')
           images=tf.placeholder(tf.float32, [None,32,32,3])
           labels=tf.placeholder(tf.int32, [None]) 
           e_x=tf.placeholder(tf.float32, [None,32,32,3])

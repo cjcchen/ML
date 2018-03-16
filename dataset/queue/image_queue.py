@@ -1,9 +1,9 @@
 import tensorflow as tf
 
-def image_queue(image, label, batch_size, threads_num = 1, mode='train'):
+def image_queue(image, label, batch_size, threads_num = 3, mode='train'):
    if mode == 'train':
        queue = tf.RandomShuffleQueue(
-       capacity= (threads_num +2)* batch_size,
+       capacity= (threads_num +3)* batch_size,
                min_after_dequeue= batch_size,
                dtypes=[tf.float32,tf.int32],
                shapes=[image.shape, label.shape])

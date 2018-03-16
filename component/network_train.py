@@ -31,7 +31,7 @@ def get_collection():
             tf.summary.histogram(v.op.name, v)
 
 def load_session(checkpoint_dir, saver):
-    session = tf.Session()
+    session = tf.Session(config=tf.ConfigProto(log_device_placement=True))
 
     try:
         print("Trying to restore last checkpoint ...:",checkpoint_dir)
@@ -68,36 +68,43 @@ def train(model, eval_model,data_x, data_y, test_x, test_y):
     summary_eval = tf.Summary()
 
     summary_writer = tf.summary.FileWriter(log_dir, session.graph)
-    summary_writer_train = tf.summary.FileWriter(log_dir+"/train", session.graph)
+    #summary_writer_train = tf.summary.FileWriter(log_dir+"/train", session.graph)
     summary_writer_eval = tf.summary.FileWriter(log_dir+"/eval", session.graph)
 
 
     while True:
-        x,y = session.run([data_x,data_y])
-        feed_dict_train = {model.x: x, model.y:y}
-        i_global, _,summary_str, c_loss = session.run([global_step, train_op, merged_summary_op,model.loss], feed_dict=feed_dict_train)
-        summary_writer.add_summary(summary_str, i_global)
-        if i_global%100 == 0:
-            t_x,t_y = session.run([test_x,test_y])
+        try:
+            x,y = session.run([data_x,data_y])
 
-            acc_count, acc = eval_predict(session, model, x,y)
-            t_acc_count, t_acc = eval_predict(session, eval_model, t_x,t_y)
+            #print FLAGS.lr,y
+            feed_dict_train = {model.x: x, model.y:y}
+            i_global, _,summary_str, c_loss = session.run([global_step, train_op, merged_summary_op,model.loss], feed_dict=feed_dict_train)
+            #print "step:",i_global, "loss:",c_loss
+            summary_writer.add_summary(summary_str, i_global)
 
-            summary.value.add(tag='acc', simple_value=acc)
-            summary.value.add(tag='eval acc', simple_value=t_acc)
-            #summary.value.add(tag='test acc', simple_value=precision)
+            if i_global%100 == 0:
+                t_x,t_y = session.run([test_x,test_y])
 
-            #summary_train.value.add(tag='acc', simple_value=acc) #add to train summary
-            summary_eval.value.add(tag='acc', simple_value=t_acc)#add to eval summary
+                acc_count, acc = eval_predict(session, model, x,y)
+                t_acc_count, t_acc = eval_predict(session, eval_model, t_x,t_y)
 
-            summary_writer.add_summary(summary, i_global)
+                summary.value.add(tag='acc', simple_value=acc)
+                summary.value.add(tag='eval acc', simple_value=t_acc)
+                summary.value.add(tag='cost', simple_value=c_loss)
 
-            #summary_writer_train.add_summary(summary_train, i_global)#write train to tensorboard
-            summary_writer_eval.add_summary(summary_eval, i_global)#write eval to tensorboard
+                summary_writer.add_summary(summary, i_global)
 
-            print "step:",i_global,"lr:",FLAGS.lr,"loss:",c_loss, "test acc:",t_acc, "train acc:",acc
-            saver.save(session, save_path=save_path, global_step=i_global) 
-            print("Saved checkpoint.")
+                #summary_eval.value.add(tag='acc', simple_value=t_acc)#add to eval summary
+                #summary_writer_eval.add_summary(summary_eval, i_global)#write eval to tensorboard
+
+                print "step:",i_global,"lr:",FLAGS.lr,"loss:",c_loss, "test acc:",t_acc, "train acc:",acc
+                saver.save(session, save_path=save_path, global_step=i_global) 
+                print("Saved checkpoint.")
+        except KeyboardInterrupt:
+            break
+        except:
+            print "run fail, continue"
+            continue
 
     summary_writer.close()
 
