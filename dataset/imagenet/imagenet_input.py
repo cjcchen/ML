@@ -8,18 +8,19 @@ import os
 
 from dataset.queue import image_queue 
 
-def not_exist(image_folder):
-    image_folder = os.path.join("./data", image_folder) 
+def not_exist(data_path, image_folder):
+    image_folder = os.path.join(data_path, image_folder) 
+    print image_folder
     return not os.path.exists(image_folder)
 
-def load_meta(meta_dir, mode):
-    print "load meta:",meta_dir
-    meta_path = os.path.join(meta_dir, "meta.mat")
+def load_meta(meta_path, data_path, mode):
+    print "load meta:",meta_path
+    meta_path = os.path.join(meta_path, "meta.mat")
     metadata = loadmat(meta_path, struct_as_record=False)
 
   # ['ILSVRC2012_ID', 'WNID', 'words', 'gloss', 'num_children', 'children', 'wordnet_height', 'num_train_images']
     synsets = np.squeeze(metadata['synsets'])
-
+    print len(synsets)
     data = {}
     words = {}
     for s in synsets:
@@ -27,7 +28,8 @@ def load_meta(meta_dir, mode):
         if sid <1001:
             wnid = str(np.squeeze(s.WNID))
             word = str(np.squeeze(s.words))
-            if not_exist(wnid):
+            print wnid
+            if not_exist(data_path, wnid):
                 continue
 
             data[wnid] = int(sid)-1
@@ -36,7 +38,7 @@ def load_meta(meta_dir, mode):
 
     if mode == 'eval':
       data = {}
-      meta_path = os.path.join(meta_dir, "ILSVRC2012_validation_ground_truth.txt")
+      meta_path = os.path.join(meta_path, "ILSVRC2012_validation_ground_truth.txt")
       with open(meta_path) as fd:
         lines = fd.readlines()
         for p, sid in enumerate(lines):
@@ -48,7 +50,7 @@ def load_meta(meta_dir, mode):
 
 def load_data_path(meta_path, data_path, mode):
     print "load data path:",data_path
-    path_data, words= load_meta(meta_path, mode)
+    path_data, words= load_meta(meta_path, data_path, mode)
 
     images=[]
     labels=[]
@@ -89,22 +91,6 @@ def get_shape(image):
 
 #resize to a image that has a min eage length DEFAULT_MIN_WIDTH
 def resize_img(image, resize_min_width):
-
-    #image_shape = tf.shape(image)
-    #o_h = image_shape[0]
-    #o_w = image_shape[1]
-    #ratio_flag = tf.greater(o_h,o_w) 
-    #new_h = tf.where(ratio_flag, tf.cast(256*o_h/o_w,tf.int32), 256)
-    #new_w = tf.where(ratio_flag, 256,tf.cast(256*o_w/o_h,tf.int32))
-    
-    #image = tf.image.resize_images(image,size=[new_h,new_w])
-    #print image.shape
-
-    #patches = []
-    #for k in range(1):
-    #    patches.append(tf.random_crop(image,size=[224,224,3]))
-    #image = patches
-    #return image
 
     h,w = get_shape(image)
 
@@ -160,18 +146,19 @@ def image_input(meta_path, data_path, batch_size = 2, mode='train'):
 
 
 if __name__ == '__main__':
-    with tf.device("/gpu:0"):
-      print sys.argv[1], sys.argv[2], sys.argv[3]
-      [data,label],words = image_input(sys.argv[1], sys.argv[2], batch_size=10, mode=sys.argv[3])
+    print sys.argv[1], sys.argv[2], sys.argv[3]
+    [data,label],words = image_input(sys.argv[1], sys.argv[2], batch_size=10, mode=sys.argv[3])
 
-      with tf.Session() as sess:
-          sess.run(tf.initialize_all_variables())
-          threads = tf.train.start_queue_runners(sess)
-          for i in xrange(10):
-            d,l = sess.run([data,label])
-            print l, words[l]
-            #print d[i].shape, label[i], words[label[i]]
+    with tf.Session() as sess:
+      sess.run(tf.initialize_all_variables())
+      threads = tf.train.start_queue_runners(sess)
+      for i in xrange(10):
+        d,l = sess.run([data,label])
+        for i,ll in enumerate(l):
+            print l[i]
+            print l[i], words[ll]
+        #print d[i].shape, label[i], words[label[i]]
             import matplotlib.pyplot as plt
             import matplotlib.image as mpimg
-            imgplot = plt.imshow(d)
+            imgplot = plt.imshow(d[i])
             plt.show() 

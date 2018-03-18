@@ -41,7 +41,6 @@ def bn(x, mode, train_ops, bn_epsilon=0.001):
                     trainable=False)
     return tf.nn.batch_normalization(x, mean, variance, beta, gamma, bn_epsilon)
 
-
 def conv(x,ksize, output_channel, stride):
     print "conv x:",x.shape, ksize, output_channel, stride
     xshape = [ksize, ksize, x.get_shape()[-1], output_channel]
@@ -91,17 +90,25 @@ def get_softmax_loss(x,y):
     return loss
 
 def variable_summaries(var):
-    with tf.name_scope('summaries'):
-      mean = tf.reduce_mean(var)
-    #tf.summary.scalar('mean', mean)
+    tf.add_to_collection('summary',var);
 
-    with tf.name_scope('stddev'):
-      stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+def get_collection_with_prefix(pre_fix):
+    summary_op = []
+    value = tf.get_collection("summary")
+    for var in value:
+        if var.op.name.startswith(pre_fix):
+            name = str(var.op.name)
+            with tf.name_scope('summaries'):
+                mean = tf.reduce_mean(var)
+            summary_op.append(tf.summary.scalar(name+'/mean', mean))
 
-    tf.add_to_collection('stddev',stddev);
-    tf.add_to_collection('max',tf.reduce_max(var));
-    tf.add_to_collection('min',tf.reduce_min(var));
-    tf.add_to_collection('mean',tf.reduce_mean(var));
-    tf.add_to_collection('histogram',var);
+            with tf.name_scope('stddev'):
+                stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+            summary_op.append(tf.summary.scalar(name+'/stddev', mean))
 
+            summary_op.append(tf.summary.scalar(name+'/max',tf.reduce_max(var)))
+            summary_op.append(tf.summary.scalar(name+'/min',tf.reduce_min(var)))
 
+            summary_op.append(tf.summary.histogram(name+'/histogram', var))
+
+    return summary_op
