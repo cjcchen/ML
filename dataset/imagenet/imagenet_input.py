@@ -10,7 +10,6 @@ from dataset.queue import image_queue
 
 def not_exist(data_path, image_folder):
     image_folder = os.path.join(data_path, image_folder) 
-    print image_folder
     return not os.path.exists(image_folder)
 
 def load_meta(meta_path, data_path, mode):
@@ -20,7 +19,6 @@ def load_meta(meta_path, data_path, mode):
 
   # ['ILSVRC2012_ID', 'WNID', 'words', 'gloss', 'num_children', 'children', 'wordnet_height', 'num_train_images']
     synsets = np.squeeze(metadata['synsets'])
-    print len(synsets)
     data = {}
     words = {}
     for s in synsets:
@@ -28,13 +26,12 @@ def load_meta(meta_path, data_path, mode):
         if sid <1001:
             wnid = str(np.squeeze(s.WNID))
             word = str(np.squeeze(s.words))
-            print wnid
             if not_exist(data_path, wnid):
                 continue
 
             data[wnid] = int(sid)-1
             words[int(sid)-1] = word
-            print sid, wnid, word
+            #print sid, wnid, word
 
     if mode == 'eval':
       data = {}
