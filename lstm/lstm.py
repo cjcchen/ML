@@ -55,8 +55,8 @@ class LSTM:
 
     def build_net(self, inputs, targets, is_training, config):
         def make_cell():
-            #cell=tf.contrib.rnn.LayerNormBasicLSTMCell(config.hidden_size, forget_bias=0.0, reuse=not is_training)
-            cell=tf.contrib.rnn.LSTMBlockCell(config.hidden_size, forget_bias=0.0)
+            cell=tf.contrib.rnn.LayerNormBasicLSTMCell(config.hidden_size, forget_bias=0.0, reuse=not is_training)
+            #cell=tf.contrib.rnn.LSTMBlockCell(config.hidden_size, forget_bias=0.0)
             #cell=tf.contrib.rnn.BasicLSTMCell(config.hidden_size, forget_bias=0.0, state_is_tuple=True, reuse=not is_training)
             if is_training and config.keep_prob < 1:
                 cell = tf.contrib.rnn.DropoutWrapper(cell, output_keep_prob=config.keep_prob)
