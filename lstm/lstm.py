@@ -17,7 +17,7 @@ tf.flags.DEFINE_string("log_path", None,
 FLAGS = tf.flags.FLAGS
 
 
-def ptb_producer(sess, raw_data, batch_size, num_steps, name=None):
+def ptb_producer(raw_data, batch_size, num_steps, name=None):
   with tf.name_scope(name, "PTBProducer", [raw_data, batch_size, num_steps]):
     raw_data = tf.convert_to_tensor(raw_data, name="raw_data", dtype=tf.int32)
 
@@ -28,8 +28,6 @@ def ptb_producer(sess, raw_data, batch_size, num_steps, name=None):
     epoch_size = tf.identity(epoch_size, name="epoch_size")
 
     i = tf.train.range_input_producer(epoch_size, shuffle=False).dequeue()
-    sess.run(tf.global_variables_initializer())
-    sess.run(tf.local_variables_initializer())
     x = tf.strided_slice(data, [0, i * num_steps],
                          [batch_size, (i + 1) * num_steps])
     x.set_shape([batch_size, num_steps])
@@ -40,13 +38,10 @@ def ptb_producer(sess, raw_data, batch_size, num_steps, name=None):
     return x, y
 
 class LSTM:
-    def __init__(self, sess, input, target, is_training = True, config=None):
+    def __init__(self, input, target, is_training = True, config=None):
 
         self.input = input
         self.target = target
-        self.sess = sess
-
-        self.global_steps = tf.Variable(0, trainable=False)  
 
         self.summaries = []
 
@@ -60,13 +55,12 @@ class LSTM:
 
     def build_net(self, inputs, targets, is_training, config):
         def make_cell():
-            cell=tf.contrib.rnn.LayerNormBasicLSTMCell(config.hidden_size, forget_bias=0.0, reuse=not is_training)
-            #cell=tf.contrib.rnn.LSTMBlockCell(config.hidden_size, forget_bias=0.0)
+            #cell=tf.contrib.rnn.LayerNormBasicLSTMCell(config.hidden_size, forget_bias=0.0, reuse=not is_training)
+            cell=tf.contrib.rnn.LSTMBlockCell(config.hidden_size, forget_bias=0.0)
             #cell=tf.contrib.rnn.BasicLSTMCell(config.hidden_size, forget_bias=0.0, state_is_tuple=True, reuse=not is_training)
-            #if is_training and config.keep_prob < 1:
-            #    cell = tf.contrib.rnn.DropoutWrapper(cell, output_keep_prob=config.keep_prob)
+            if is_training and config.keep_prob < 1:
+                cell = tf.contrib.rnn.DropoutWrapper(cell, output_keep_prob=config.keep_prob)
             return cell
-            return tf.contrib.rnn.BasicLSTMCell(self.hidden_size, forget_bias=0.0, state_is_tuple=True, reuse=not is_training)
 
         cell = tf.contrib.rnn.MultiRNNCell([make_cell() for _ in range(config.num_layers)], state_is_tuple=True)
 
@@ -109,14 +103,13 @@ class LSTM:
         grads, _= tf.clip_by_global_norm(tf.gradients(self._cost, tvars),
                                       config.max_grad_norm)
         for grad in grads:  
-            print ("grad name:",grad, grad.op.name)
             if grad is not None:  
                 self.summaries.append(tf.summary.histogram(grad.op.name + '/gradients', grad))
         #grads, _ = tf.clip_by_global_norm(tf.gradients(self._cost, tvars), config.max_grad_norm)
         optimizer = tf.train.GradientDescentOptimizer(self.lr)
         self._train_op = optimizer.apply_gradients(
             zip(grads, tvars),
-            global_step=self.global_steps)
+            global_step=tf.train.get_or_create_global_step())
             #global_step=tf.train.get_or_create_global_step())
 
         return 
@@ -124,7 +117,10 @@ class LSTM:
     def assign_lr(self, lr):
         self.sess.run(self.lr_op, feed_dict={self.new_lr:lr})
 
-    def train(self,sess, state, inputs = None, target = None):
+    def set_sess(self,sess):
+        self.sess=sess
+
+    def train(self,sess, state):
         '''
         print ("len:",len(inputs[0]))
         print ("len:",len(inputs[1]))
@@ -147,7 +143,6 @@ class LSTM:
 
 
 class config:
-    '''
     init_scale = 0.1
     learning_rate = 1.0
     max_grad_norm = 5
@@ -160,9 +155,8 @@ class config:
     lr_decay = 0.5
     batch_size = 20
     vocab_size = 10000
-    '''
 
-    """Medium config."""
+    '''
     init_scale = 0.05
     learning_rate = 1.0
     max_grad_norm = 5
@@ -177,7 +171,6 @@ class config:
     vocab_size = 10000
 
 
-    '''
     init_scale = 0.04
     learning_rate = 1.0
     max_grad_norm = 10
@@ -198,18 +191,14 @@ def run_epoch(sess, _input, _target, lstm, lr_decay, epoch_size, summary_writer,
     costs = 0
     state=sess.run( lstm.initial_state )
     for e in range(epoch_size):
-        input = sess.run(_input)
-        target = sess.run(_target)
-        #cost,lr = lstm.train(sess, state)
-        cost,lr,summary_str = lstm.train(sess, state, input, target)
+        cost,lr,summary_str = lstm.train(sess, state)
         costs += cost
         epochs += config.num_steps
         if e % 10 == 0:
             perxity=np.exp(costs / epochs)
             summary.value.add(tag='perxity', simple_value=perxity)
             summary.value.add(tag='lr', simple_value=lr_decay)
-            i_global=sess.run(lstm.global_steps)
-            print (sv.global_step)
+            i_global=sess.run(tf.train.get_or_create_global_step())
             print ("pt %f epo %d global step %d" % (perxity, epochs, i_global))
             summary_writer.add_summary(summary, i_global)#write eval to tensorboard
             summary_writer.add_summary(summary_str, i_global)#write eval to tensorboard
@@ -225,25 +214,24 @@ def save_model(session, sv, global_step):
 def train():
     input = data_input.gen_data(FLAGS.data_path)
     epoch_size = ((len(input) // config.batch_size) - 1) // config.num_steps
-    sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True, log_device_placement=True))
     c = config()
     
-    _input, _target = ptb_producer(sess, input, c.batch_size, c.num_steps)
+    _input, _target = ptb_producer(input, c.batch_size, c.num_steps)
     with tf.device("/gpu:0"):
-        lstm = LSTM(sess, _input, _target, is_training=True, config=c) 
-
-    #sess.run(tf.global_variables_initializer())
-    #sess.run(tf.local_variables_initializer())
-    #coord = tf.train.Coordinator()  
-    #threads = tf.train.start_queue_runners(sess=sess, coord=coord)  
-    print ("log save:",FLAGS.log_path) 
-    summary_writer = tf.summary.FileWriter(FLAGS.log_path,sess.graph)
+        lstm = LSTM( _input, _target, is_training=True, config=c) 
 
     sv = tf.train.Supervisor(logdir=FLAGS.save_path)
     config_proto = tf.ConfigProto(allow_soft_placement=True)
     with sv.managed_session(config=config_proto) as sess:
+
+        lstm.set_sess(sess)
+
+        print ("log save:",FLAGS.log_path) 
+        summary_writer = tf.summary.FileWriter(FLAGS.log_path,sess.graph)
+
         for i in range(config.max_max_epoch):
             x_lr_decay = config.lr_decay ** max(i + 1 - config.max_epoch, 0.0)
+            print ("lr:",x_lr_decay)
             lstm.assign_lr(config.learning_rate * x_lr_decay)
             p=run_epoch(sess, _input, _target, lstm, x_lr_decay, epoch_size, summary_writer,sv)
             print ("step %d per %f" % (i,p))
