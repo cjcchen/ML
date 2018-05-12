@@ -38,12 +38,14 @@ def ptb_producer(raw_data, batch_size, num_steps, name=None):
     return x, y
 
 class LSTM:
-    def __init__(self, input, target, is_training = True, config=None):
+    def __init__(self, input, target, initial_state=None, is_training = True, config=None):
 
         self.input = input
         self.target = target
+        self.image_state = initial_state
 
         self.summaries = []
+
 
         embedding = tf.get_variable("embedding", [config.vocab_size, config.hidden_size], dtype=tf.float32)
         inputs = tf.nn.embedding_lookup(embedding, self.input)
@@ -51,7 +53,7 @@ class LSTM:
             inputs = tf.nn.dropout(inputs, config.keep_prob)
 
         self.build_net(inputs, target, is_training, config)
-        self.summary_op = tf.summary.merge(self.summaries)  
+        self.summary_op = tf.summary.merge(self.summaries)
 
     def build_net(self, inputs, targets, is_training, config):
         def make_cell():
@@ -65,7 +67,11 @@ class LSTM:
         cell = tf.contrib.rnn.MultiRNNCell([make_cell() for _ in range(config.num_layers)], state_is_tuple=True)
 
         self.initial_state = cell.zero_state(config.batch_size,dtype=tf.float32)
-        state = self.initial_state 
+        state = self.initial_state
+
+        if self.image_state is not None:
+            image_embeddings = tf.contrib.layers.fully_connected( inputs=self.image_state, num_outputs= config.hidden_size, activation_fn=None)
+            _, state = cell(image_embeddings, state)
 
         outputs = []
         with tf.variable_scope("RNN"):
@@ -82,7 +88,7 @@ class LSTM:
         logits = tf.nn.xw_plus_b(output, softmax_w, softmax_b)
      # Reshape logits to be a 3-D tensor for sequence loss
         logits = tf.reshape(logits, [config.batch_size, config.num_steps, vocab_size])
-        
+
         print ("logit shape:",logits.shape)
 
     # Use the contrib sequence loss and average over the batches
@@ -100,10 +106,12 @@ class LSTM:
         self.new_lr = tf.Variable(0.0, trainable=False)
         self.lr_op=tf.assign(self.lr,self.new_lr)
         tvars = tf.trainable_variables()
+        print ("lstm var:",tvars)
         grads, _= tf.clip_by_global_norm(tf.gradients(self._cost, tvars),
                                       config.max_grad_norm)
-        for grad in grads:  
-            if grad is not None:  
+        for grad in grads:
+            if grad is not None:
+                print ("grad:",grad)
                 self.summaries.append(tf.summary.histogram(grad.op.name + '/gradients', grad))
         #grads, _ = tf.clip_by_global_norm(tf.gradients(self._cost, tvars), config.max_grad_norm)
         optimizer = tf.train.GradientDescentOptimizer(self.lr)
@@ -112,13 +120,10 @@ class LSTM:
             global_step=tf.train.get_or_create_global_step())
             #global_step=tf.train.get_or_create_global_step())
 
-        return 
+        return
 
-    def assign_lr(self, lr):
-        self.sess.run(self.lr_op, feed_dict={self.new_lr:lr})
-
-    def set_sess(self,sess):
-        self.sess=sess
+    def assign_lr(self, sess, lr):
+        sess.run(self.lr_op, feed_dict={self.new_lr:lr})
 
     def train(self,sess, state):
         '''
@@ -215,10 +220,10 @@ def train():
     input = data_input.gen_data(FLAGS.data_path)
     epoch_size = ((len(input) // config.batch_size) - 1) // config.num_steps
     c = config()
-    
+
     _input, _target = ptb_producer(input, c.batch_size, c.num_steps)
     with tf.device("/gpu:0"):
-        lstm = LSTM( _input, _target, is_training=True, config=c) 
+        lstm = LSTM( _input, _target, is_training=True, config=c)
 
     sv = tf.train.Supervisor(logdir=FLAGS.save_path)
     config_proto = tf.ConfigProto(allow_soft_placement=True)
@@ -226,7 +231,7 @@ def train():
 
         lstm.set_sess(sess)
 
-        print ("log save:",FLAGS.log_path) 
+        print ("log save:",FLAGS.log_path)
         summary_writer = tf.summary.FileWriter(FLAGS.log_path,sess.graph)
 
         for i in range(config.max_max_epoch):
@@ -235,7 +240,7 @@ def train():
             lstm.assign_lr(config.learning_rate * x_lr_decay)
             p=run_epoch(sess, _input, _target, lstm, x_lr_decay, epoch_size, summary_writer,sv)
             print ("step %d per %f" % (i,p))
-        
+
 def main():
     train()
 
