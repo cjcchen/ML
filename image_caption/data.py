@@ -22,7 +22,26 @@ def gen_word_to_id(captions):
     words, _ = list(zip(*count_pairs))
     word_to_id_dict = dict(zip(words, range(len(words))))
     id_to_word_dict = dict(zip(range(len(words)), words))
+
+    with open("./data.dat","w") as f:
+        for w,i in word_to_id_dict.items():
+            print ("%s %d"%(w,i))
+            f.write("%s %d\n" %(w,i))
+        f.close()
+
+
     return word_to_id_dict,id_to_word_dict
+
+
+def get_word_to_id():
+    if not os.path.exists('./data.dat'):
+        return dict(),dict()
+
+    with open("./data.dat","r") as f:
+        word_to_id = [line.split() for line in f.readlines()]
+        word_to_id_dict = [ (w,int(i)) for w,i in word_to_id]
+        id_to_word_dict = [ (int(i),w) for w,i in word_to_id]
+        return dict(word_to_id_dict), dict(id_to_word_dict)
 
 def read_caption_data(caption_file, image_folder):
     with open(caption_file) as f:
@@ -44,20 +63,22 @@ def filter_data(image_files, captions, max_len):
     for i,c in zip(image_files, captions):
         c=nltk.tokenize.word_tokenize(c.lower())
         c=['<start>'] + c + ['<end>']
-        if(len(c) > max_len):
-            continue
-        c += ['<null>']*(max_len-len(c))
+        if len(c) > max_len:
+                continue
+        if len(c) < max_len:
+            c+= ['<null>'] * (max_len-len(c))
         image_list.append(i)
         caption_list.append(c)
-        if len(caption_list) > 20:
-            break
 
     captions, word_to_id_dict, id_to_word_dict=word_to_id(caption_list)
     print ("filter len:",len(captions))
     return image_list, captions, word_to_id_dict, id_to_word_dict
 
 def add_queue(image_files, captions, batch_size, mode, threads_num=1):
-    image_files, label = tf.train.slice_input_producer([image_files, captions],shuffle=True)
+    data = np.array(captions)
+    print "image shape:",np.array(image_files).shape
+    print "data shape:",data.shape
+    image_files, label = tf.train.slice_input_producer([image_files, np.array(captions)],shuffle=True)
     image = tf.image.decode_jpeg(tf.read_file(image_files), channels=3)
     image = tf.image.resize_image_with_crop_or_pad(image, 224, 224)
     image = tf.image.per_image_standardization(image)
