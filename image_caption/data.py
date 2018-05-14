@@ -25,10 +25,9 @@ def gen_word_to_id(captions):
 
     with open("./data.dat","w") as f:
         for w,i in word_to_id_dict.items():
-            print ("%s %d"%(w,i))
+            #print ("%s %d"%(w,i))
             f.write("%s %d\n" %(w,i))
         f.close()
-
 
     return word_to_id_dict,id_to_word_dict
 
@@ -72,6 +71,7 @@ def filter_data(image_files, captions, max_len):
 
     captions, word_to_id_dict, id_to_word_dict=word_to_id(caption_list)
     print ("filter len:",len(captions))
+    print ("word list:",len(word_to_id_dict))
     return image_list, captions, word_to_id_dict, id_to_word_dict
 
 def add_queue(image_files, captions, batch_size, mode, threads_num=1):

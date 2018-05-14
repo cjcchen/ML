@@ -13,7 +13,6 @@ tf.flags.DEFINE_string("image_path", None,
                     "Model output directory.")
 FLAGS = lstm.FLAGS
 
-
 class ImageCaption:
     def __init__(self, images, word, target, config, is_training=True):
         self.config = config
@@ -26,18 +25,16 @@ class ImageCaption:
             self.cnn_net = Vgg16()
             self.cnn_net.build(image)
 
-        init_state = self.cnn_net.relu6
-        self.lstm = lstm.LSTM(initial_state=init_state, input=word, target=target_word, config=config, is_training=is_training)
+        with tf.device("/gpu:0"):
+            init_state = self.cnn_net.relu6
+            self.lstm = lstm.LSTM(initial_state=init_state, input=word, target=target_word, config=config, is_training=is_training)
 
     def run_epoch(self,sess, lr_decay, epoch_size, summary_writer,sv):
         summary = tf.Summary()
         epochs = 0
         costs = 0
         for e in range(epoch_size):
-            feed_dict = {
-                    #self.lstm.seqlen:np.array([self.config.num_steps]*self.config.batch_size).reshape([-1])
-                    }
-
+            feed_dict={}
             cost,lr,summary_str = self.lstm.train(sess, feed_dict)
             costs += cost
             epochs += self.config.num_steps
@@ -46,15 +43,35 @@ class ImageCaption:
                 summary.value.add(tag='perxity', simple_value=perxity)
                 summary.value.add(tag='lr', simple_value=lr_decay)
                 i_global=sess.run(tf.train.get_or_create_global_step())
-                print ("pt %f cost %f epo %d global step %d" % (perxity, costs, epochs, i_global))
+                print ("pt %f cost %f pre cost %f epo %d global step %d" % (perxity, costs, cost, epochs, i_global))
                 summary_writer.add_summary(summary, i_global)#write eval to tensorboard
                 summary_writer.add_summary(summary_str, i_global)#write eval to tensorboard
-        save_model(sess, sv, i_global)
+            if e % 100 == 0:
+                save_model(sess, sv, FLAGS.save_path, i_global)
         return perxity
+
+def save_model(sess, sv, save_path, global_step):
+    sv.save(sess, save_path=save_path, global_step=global_step)
+
+def load_session(sess, checkpoint_dir):
+    saver = tf.train.Saver()
+
+    try:
+        print("Trying to restore last checkpoint ...:",checkpoint_dir)
+        last_chk_path = tf.train.latest_checkpoint(checkpoint_dir=checkpoint_dir)
+        saver.restore(sess, save_path=last_chk_path)
+        print("restore last checkpoint %s done"%checkpoint_dir)
+    except Exception as e:
+        print("Failed to restore checkpoint. Initializing variables instead."),e
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.initialize_all_variables())
+
+    return saver
 
 def train():
     config = lstm.config()
     config.batch_size = 2
+    config.hidden_size=512
 
     f, image,label,word, target, w2d,d2w = data.get_data(FLAGS.caption_path, FLAGS.image_path, max_len=config.num_steps+1, batch_size=config.batch_size)
     epoch_size=10000
@@ -62,19 +79,20 @@ def train():
     print ("vb size:",len(w2d))
     image_caption = ImageCaption(image, word, target, config)
 
-    sv = tf.train.Supervisor(logdir=FLAGS.save_path)
+    #sv = tf.train.Supervisor(logdir=FLAGS.save_path)
     config_proto = tf.ConfigProto(allow_soft_placement=True)
-    with sv.managed_session(config=config_proto) as sess:
-    #with tf.Session() as sess:
-    #    sess.run(tf.initialize_all_variables())
-    #    threads = tf.train.start_queue_runners(sess)
+    #with sv.managed_session(config=config_proto) as sess:
+    with tf.Session(config=config_proto) as sess:
+        sv = load_session(sess, FLAGS.save_path)
+        threads = tf.train.start_queue_runners(sess)
+
         summary_writer = tf.summary.FileWriter(FLAGS.log_path,sess.graph)
 
         for i in range(config.max_max_epoch):
             x_lr_decay = config.lr_decay ** max(i + 1 - config.max_epoch, 0.0)
             print ("lr:",x_lr_decay)
             image_caption.lstm.assign_lr(sess, config.learning_rate * x_lr_decay)
-            p=image_caption.run_epoch(sess, x_lr_decay, epoch_size, summary_writer,None)
+            p=image_caption.run_epoch(sess, x_lr_decay, epoch_size, summary_writer,sv)
             print ("step %d per %f" % (i,p))
 
 def predict():
