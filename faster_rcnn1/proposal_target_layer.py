@@ -6,17 +6,9 @@ BG_THRESH_HO = 0.5
 BG_THRESH_LO = 0.0
 
 def gen_target(proposals, scores, gt_boxes, num_class, batch_size):
-    print ("========================= gen target:",proposals.shape, scores.shape, gt_boxes.shape)
     labels, rois, rois_scores, bbox_targets,inside_weights,outside_weights = \
             tf.py_func(get_label, [proposals, scores, gt_boxes, num_class, batch_size],
                     [tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, tf.float32] )
-
-    #labels = tf.convert_to_tensor(tf.cast(labels,tf.float32), name = 'rpn_labels')
-    #rois = tf.convert_to_tensor(tf.cast(rois,tf.float32), name = 'rois')
-    #rois_scores = tf.convert_to_tensor(tf.cast(rois_scores, tf.float32), name='rois_scores')
-    #bbox_targets = tf.convert_to_tensor(bbox_targets, tf.float32, name = 'rpn_bbox_targets')
-    #inside_weights = tf.convert_to_tensor(inside_weights , tf.float32, name = 'rpn_bbox_inside_weights')
-    #outside_weights = tf.convert_to_tensor(outside_weights , tf.float32, name = 'rpn_bbox_outside_weights')
 
     labels.set_shape([batch_size, 1])
     rois.set_shape([batch_size, 5])
@@ -44,24 +36,17 @@ def get_label(proposals, scores, gt_boxes, num_class, batch_size):
         max_i = 0
         for j,box in enumerate(gt_boxes):
             area = over_lap(anchor[1:5],box[0:4])
-        #    print ("anchor:",anchor, "box:",box, "area:",area)
             over_lap_matrix[i,j] = area
             if area > max_area:
                 max_area = area
                 max_i = j
-        #print ("max area:",max_area, max_area>FG_FRACTION)
         if max_area >= FG_FRACTION:
             fg_index.append(i)
         elif max_area >= BG_THRESH_LO and max_area < BG_THRESH_HO:
             bg_index.append(i)
         label[i] = gt_boxes[max_i, 4]
-    #print ("len:",len(fg_index), len(bg_index))
-    #print ("fg index ::",fg_index[0:50])
-    #print ("bg index ::",bg_index[0:50])
-
     rois_per_image = batch_size #training data
     fg_image_num = np.round(FG_FRACTION * rois_per_image).astype(np.int32) #front ground pages
-    #print ("run :",len(fg_index), len(bg_index))
     if len(fg_index) > 0 and len(bg_index) > 0:
         fg_image_num = min(len(fg_index), fg_image_num)
         bg_image_num = rois_per_image - fg_image_num
@@ -79,13 +64,7 @@ def get_label(proposals, scores, gt_boxes, num_class, batch_size):
     else:
         assert 1 == 0
 
-
-    #print ("fg index:",fg_index)
-    #print ("bg index:",bg_index)
-
     final_index = np.append(fg_index, bg_index).astype(np.int32)
-
-    #print ("final_index:",final_index)
 
     all_rois = all_rois[final_index]
     all_scores = all_scores[final_index]
@@ -134,10 +113,6 @@ def get_label(proposals, scores, gt_boxes, num_class, batch_size):
         bbox_target[i, index:index+4] = (dx,dy,dw,dh)
         in_weight[i,index:index+4] = (1,1,1,1)
         out_weight[i,index:index+4] = (1,1,1,1)
-
-    #print ("bb arget:",bbox_target.dtype)
-    #print ("index weight:",in_weight.dtype)
-    #print ("label",label.shape, all_rois.shape,all_scores.shape)
 
     label = label.reshape(-1, 1)
     all_scores = all_scores.reshape(-1)

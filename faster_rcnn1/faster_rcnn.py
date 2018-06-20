@@ -56,32 +56,9 @@ class FasterRCNN:
             self.feature_input = self.cnn_net.get_output()
 
             rois = self.build_proposal()
-            self.rois = rois
-            self.pool5 = self._crop_pool_layer(self.feature_input, rois, "crop")
+            pool5 = self._crop_pool_layer(self.feature_input, rois, "crop")
 
-
-
-            self.anchor_targets = {}
-            self.anchor_targets['rpn_labels'] = self.rpn.cls_label
-            self.anchor_targets['rpn_bbox_targets'] = self.rpn.bbox_target
-            self.anchor_targets['rpn_bbox_inside_weights'] = self.rpn.bbox_target_in_weight
-            self.anchor_targets['rpn_bbox_outside_weights'] = self.rpn.bbox_target_out_weight
-
-            self.proposal_targets={}
-            self.proposal_targets['labels'] = tf.to_int32(self.proposal.cls_label, name="to_int32")
-            self.proposal_targets['bbox_targets'] = self.proposal.bbox_target
-            self.proposal_targets['bbox_inside_weights'] = self.proposal.bbox_target_in_weight
-            self.proposal_targets['bbox_outside_weights'] = self.proposal.bbox_target_out_weight
-
-            self.predictions={}
-            self.predictions["rpn_cls_score"] = self.rpn.rpn_cls_score
-            self.predictions["rpn_cls_score_reshape"] = self.rpn.rpn_cls_score_reshape
-            self.predictions["rpn_cls_prob"] = self.rpn.rpn_cls_prob
-            self.predictions["rpn_cls_pred"] = self.rpn.rpn_cls_pred
-            self.predictions["rpn_bbox_pred"] = self.rpn.rpn_bbox_pred
-
-
-            self.build_tail(self.pool5)
+            self.build_tail(pool5)
 
             self.build_loss()
 
@@ -102,28 +79,22 @@ class FasterRCNN:
 
     def build_tail(self, rois):
         with tf.variable_scope(self._scope, self._scope, reuse=None):
-            print ("rois shape:",rois.shape) #[1,w,h,]
             flatten_rois = slim.flatten(rois, scope='flatten')
-            fc5 = self.fc(flatten_rois, 4096, name="fc6")
+            fc5 = slim.fully_connected(flatten_rois, 4096, scope="fc6")
             if self.is_training:
                 fc5 = slim.dropout(fc5, keep_prob=0.5, is_training=True, scope='dropout6')
 
-            fc6 = self.fc(fc5, 4096, name="fc7")
+            fc6 = slim.fully_connected(fc5, 4096, scope="fc7")
             if self.is_training:
                 fc6 = slim.dropout(fc6, keep_prob=0.5, is_training=True, scope='dropout7')
-            #fc6 = rois
-            self.cls_logit = self.fc(fc6, self.num_class, name="cls_logit")
+
+            self.cls_logit = slim.fully_connected(fc6, self.num_class, scope="cls_logit")
             self.cls_softmax = tf.nn.softmax(self.cls_logit)
             self.cls_prob = self.cls_softmax
             self.cls_pred = tf.argmax(self.cls_prob, axis=1, name="cls_pred")
 
-            self.bbox_logit = self.fc(fc6, self.num_class*4, name="bbox_logit")
+            self.bbox_logit = slim.fully_connected(fc6, self.num_class*4, scope="bbox_logit")
             self.bbox_pred = self.bbox_logit
-
-            self.predictions["cls_score"] = self.cls_logit
-            self.predictions["cls_pred"] = self.cls_pred
-            self.predictions["cls_prob"] = self.cls_prob
-            self.predictions["bbox_pred"] = self.bbox_pred
 
 
     def _crop_pool_layer(self, bottom, rois, name):
@@ -146,8 +117,6 @@ class FasterRCNN:
 
 
     def build_loss(self):
-
-        print ("rpn cls loss:",self.rpn.cls_logit, self.rpn.cls_label)
         rpn_cls_loss = self.get_cls_loss(self.rpn.cls_logit, self.rpn.cls_label)
         self.rpn_cross_entropy = rpn_cls_loss
 
@@ -158,7 +127,6 @@ class FasterRCNN:
 # RCNN, class loss
         cls_label = tf.to_int32(self.proposal.cls_label, name="to_int32")
         cls_label = tf.reshape(cls_label, [-1])
-        print ("clos logit:",self.cls_logit.shape, cls_label.shape)
         cls_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.cls_logit, labels=cls_label))#[-1, 21], [-1,1]
         self.cross_entropy = cls_loss
 
@@ -167,8 +135,6 @@ class FasterRCNN:
         self.loss_box = bbox_loss
 
         loss = rpn_cls_loss + rpn_bbox_loss + cls_loss + bbox_loss
-        print ("loss:",loss, rpn_cls_loss, rpn_bbox_loss, cls_loss, bbox_loss)
-        print ("reg loss:",tf.losses.get_regularization_losses())
         regularization_loss = tf.add_n(tf.losses.get_regularization_losses(), 'regu')
         self.loss = loss + regularization_loss
         #return self.loss
@@ -190,6 +156,8 @@ class FasterRCNN:
 
     def build_train_op(self):
         lr = tf.Variable(0.01, trainable=False)
+        i_global_op=tf.train.get_or_create_global_step()
+        self.global_op = i_global_op
         self.optimizer = tf.train.MomentumOptimizer(lr, MOMENTUM)
 
        # Compute the gradients with regard to the loss
@@ -205,18 +173,11 @@ class FasterRCNN:
                 if not np.allclose(scale, 1.0):
                     grad = tf.multiply(grad, scale)
                 final_gvs.append((grad, var))
-           train_op = self.optimizer.apply_gradients(final_gvs)
+           train_op = self.optimizer.apply_gradients(final_gvs, global_step=i_global_op)
         else:
-           train_op = self.optimizer.apply_gradients(gvs)
+           train_op = self.optimizer.apply_gradients(gvs, global_step=i_global_op)
 
         return lr, train_op
-
-    def get_bbox_loss(self, predict, target, in_weight, out_weight):
-        diff = predict - target
-        diff = tf.multiply(diff,in_weight)
-        r = self.smooth(diff)
-        loss = tf.reduce_sum(tf.multiply(r,out_weight))
-        return loss * RPN_BBOX_LAMBDA
 
     def get_cls_loss(self, predict, target):
         '''
@@ -232,53 +193,12 @@ class FasterRCNN:
 
         return tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_cls_score, labels=rpn_label))
 
-    def fc(self,x,output_dim, bias=None, func = None, name=""):
-        o = slim.fully_connected(x, output_dim, scope=name)
-        if func:
-            o = func(o)
-        return o
-
-    def smooth(self, x, sigma=1.0):
-        '''
-        Tensorflow implementation of smooth L1 loss defined in Fast RCNN:
-        (https://arxiv.org/pdf/1504.08083v2.pdf)
-
-                        0.5 * (sigma * x)^2         if |x| < 1/sigma^2
-        smoothL1(x) = {
-                        |x| - 0.5/sigma^2           otherwise
-        '''
-        conditional = tf.less(tf.abs(x), 1/sigma**2)
-        close = 0.5 * (sigma * x)**2
-        far = tf.abs(x) - 0.5/sigma**2
-        return tf.where(conditional, close, far)
-
     def train_step(self, sess, image, gt_boxes, im_info ):
-        print image.shape, type(image)
-        print gt_boxes.shape, type(gt_boxes)
-        print im_info.shape, type(im_info)
-        #bois, scores = gen_proposal(rpn_cls_pred, rpn_bbox_pred, im_info)
-        #self.rpn_cls, self.rpn_bbox = self.rpn.build(self.feature_input, self.gt_boxes, self.im_info)
-        #rpn_labels = sess.run( [self.rpn_cls], feed_dict={self.image:image, self.gt_boxes:gt_boxes, self.im_info:im_info.reshape(-1)} )
-        loss,lr,_ = sess.run( [self.loss, self.lr, self.train_op], feed_dict={self.image:image, self.gt_boxes:gt_boxes, self.im_info:im_info.reshape(-1)} )
-        #print "rpn_label:",np.where(rpn_label!=-1)
-        #print "labels:",np.where(rpn_labels!=-1)
-        print ("===== loss:",loss, "lr:",lr)
+        loss,lr,global_step, _ = sess.run( [self.loss, self.lr, self.global_op, self.train_op], feed_dict={self.image:image, self.gt_boxes:gt_boxes, self.im_info:im_info.reshape(-1)} )
         import math
         assert not math.isnan(loss)
 
-    '''
-    def train_step(self, sess, blobs, train_op):
-        feed_dict = {self.image: blobs['data'], self.im_info: blobs['im_info'],
-                     self.gt_boxes: blobs['gt_boxes']}
-
-        rpn_loss_cls = 0
-        rpn_loss_box = 0
-        loss_cls = 0
-        loss_box = 0
-        loss, _ = sess.run([ self.loss, train_op], feed_dict=feed_dict)
-        print ("loss;==========",loss)
-        return rpn_loss_cls, rpn_loss_box, loss_cls, loss_box, loss
-    '''
+        return loss, lr, global_step
 
     def assign_lr(self, sess, rate):
         sess.run(tf.assign(self.lr, rate))

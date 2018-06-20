@@ -72,30 +72,6 @@ def get_label(anchor_list,gt_box, image_raw_size, batch_size):
     over_lap_matrix = np.zeros([len(anchor_list), len(gt_box)])
     label = np.zeros(len(anchor_list))
     label.fill(-1)
-    '''
-    for j,box in enumerate(gt_box):
-        max_area = 0.0
-        index = -1
-        for i, anchor in enumerate(anchor_list):
-            if in_image(anchor, image_raw_size):
-                area = over_lap(anchor,box)
-                if label[i] != 2:
-                    if area > RPN_POSITIVE_OVERLAP:
-                        label[i] = 1
-                    elif area < RPN_NEGATIVE_OVERLAP:
-                        label[i] = 0
-
-                if max_area < area:
-                    max_area = area
-                    index = i
-                over_lap_matrix[i,j] = area
-        if index >-1:
-            label[over_lap_matrix[:,j] == max_area] = 2
-            #for i, anchor in enumerate(anchor_list):
-            #    if over_lap_matrix[i,j] == max_area:
-            #        label[i] = 2
-    label[label==2]=1
-    '''
     for i, anchor in enumerate(anchor_list):
         max_area = -1.0
         index = -1
@@ -106,38 +82,11 @@ def get_label(anchor_list,gt_box, image_raw_size, batch_size):
                     max_area = area
                     index = i
                 over_lap_matrix[i,j] = area
-            #if i > 1400 and i < 1410:
-            #    print ("my over lap:",i,j,anchor, box, over_lap_matrix[i,j], max_area, index)
         if index >-1:
             if max_area >= RPN_POSITIVE_OVERLAP:
                 label[i] = 1
             elif max_area < RPN_NEGATIVE_OVERLAP:
                 label[i] = 0
-            #print ("!!inside index:",i,label[i], max_area)
-            #for i, anchor in enumerate(anchor_list):
-            #    if over_lap_matrix[i,j] == max_area:
-            #        label[i] = 2
-
-    '''
-    for i, anchor in enumerate(anchor_list):
-        max_area = 0.0
-        index = -1
-        for j,box in enumerate(gt_box):
-                area = over_lap_matrix[i,j]
-                if max_area < area:
-                    max_area = area
-                    index = i
-                over_lap_matrix[i,j] = area
-        if index >-1:
-            if max_area >= RPN_POSITIVE_OVERLAP:
-                label[i] = 1
-            elif max_area < RPN_NEGATIVE_OVERLAP:
-                label[i] = 0
-            #for i, anchor in enumerate(anchor_list):
-            #    if over_lap_matrix[i,j] == max_area:
-            #        label[i] = 2
-    '''
-
     for j,box in enumerate(gt_box):
         max_area = 0.0
         index = -1
@@ -150,42 +99,12 @@ def get_label(anchor_list,gt_box, image_raw_size, batch_size):
             for i in range(len(anchor_list)):
                 if over_lap_matrix[i,j] == max_area:
                     label[i] = 1
-            #        print ("!!~~inside index:",i, label[i], max_area)
-            #label[over_lap_matrix[:,j] == max_area] = 1
-    #print ("1548:",label[1548])
-
-    '''
-    overlaps = over_lap_matrix
-    argmax_overlaps = overlaps.argmax(axis=1)
-    max_overlaps = overlaps[np.arange(len(anchor_list)), argmax_overlaps]
-    gt_argmax_overlaps = overlaps.argmax(axis=0)
-    gt_max_overlaps = overlaps[gt_argmax_overlaps,
-                             np.arange(overlaps.shape[1])]
-    gt_argmax_overlaps = np.where(overlaps == gt_max_overlaps)[0]
-
-    if not cfg.TRAIN.RPN_CLOBBER_POSITIVES:
-        # assign bg labels first so that positive labels can clobber them
-        # first set the negatives
-        label[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0
-
-      # fg label: for each gt, anchor with highest overlap
-    label[gt_argmax_overlaps] = 1
-
-      # fg label: above threshold IOU
-    label[max_overlaps >= cfg.TRAIN.RPN_POSITIVE_OVERLAP] = 1
-
-    if cfg.TRAIN.RPN_CLOBBER_POSITIVES:
-        # assign bg labels last so that negative labels can clobber positives
-        label[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0
-    '''
-
     fg_num = int(RPN_FG_FACTOR * batch_size)
     fg_index = np.where(label == 1)[0]
     #print ("fg num:",fg_num, len(fg_index))
     if len(fg_index) > fg_num:
         remove_index = np.random.choice(fg_index, size=(len(fg_index) - fg_num), replace=False)
         label[remove_index] = -1
-    #print ("1548:",label[1548])
 
     bg_num = batch_size - np.sum(label==1)
     bg_index = np.where(label == 0)[0]
@@ -194,7 +113,6 @@ def get_label(anchor_list,gt_box, image_raw_size, batch_size):
         remove_index = np.random.choice(bg_index, size=(len(bg_index) - bg_num), replace=False)
         label[remove_index] = -1
         #print ("get:",remove_index, len(remove_index))
-    #print ("1548:",label[1548])
 
     in_weight = np.zeros([len(anchor_list),4], dtype=np.float32)
     out_weight = np.zeros([len(anchor_list),4], dtype=np.float32)
@@ -296,9 +214,9 @@ def get_cls_loss(predict, target):
 
     return tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_cls_score, labels=rpn_label))
 
-from utils.blob import prep_im_for_blob, im_list_to_blob
-PIXEL_MEANS = np.array([[[102.9801, 115.9465, 122.7717]]])
 def _get_image_blob(file_name):
+  from utils.blob import prep_im_for_blob, im_list_to_blob
+  PIXEL_MEANS = np.array([[[102.9801, 115.9465, 122.7717]]])
   """Builds an input blob from the images in the roidb at the specified
   scales.
   """

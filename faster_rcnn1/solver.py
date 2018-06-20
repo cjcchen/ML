@@ -78,8 +78,8 @@ class Solver():
             print('Fixed.')
             return
 
-    def save_model(self, sess):
-        self.saver.save(sess, os.path.join(self.model_dir,'cp'))
+    def save_model(self, sess, global_step):
+        self.saver.save(sess, os.path.join(self.model_dir,'cp'), global_step=global_step)
         print ("save model:",os.path.join(self.model_dir,'cp'))
 
     def train_model(self, sess, max_iters):
@@ -102,11 +102,12 @@ class Solver():
             gt_boxes = blobs['gt_boxes']
             im_info = blobs['im_info']
 
-            self.faster_rcnn.train_step( sess, image, gt_boxes, im_info)
+            loss, lr, global_step = self.faster_rcnn.train_step( sess, image, gt_boxes, im_info)
             iter+=1
+            print ("===== loss:",loss, "lr:",lr, "global step:",global_step)
 
             if iter % SAVE_STEP == 0:
-                self.save_model(sess)
+                self.save_model(sess, global_step)
 
 def train():
 
