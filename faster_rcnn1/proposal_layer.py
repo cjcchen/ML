@@ -17,9 +17,9 @@ def gen_proposal(cls_score_pred, bbox_pred, image_raw_size, anchor_list, num_anc
 
 
 def get_proposal(cls_score_pred, bbox_pred, image_raw_size, anchor_list, num_anchors):
-    print("get proposal, score:",cls_score_pred.shape,"bbox:",bbox_pred.shape)
-    print("num anchor_list:",num_anchors)
-    print ("image_raw_size:",image_raw_size)
+    #print("get proposal, score:",cls_score_pred.shape,"bbox:",bbox_pred.shape)
+    #print("num anchor_list:",num_anchors)
+    #print ("image_raw_size:",image_raw_size)
     nms_thresh = float(0.7)
 
     #get the front pages
@@ -39,7 +39,7 @@ def get_proposal(cls_score_pred, bbox_pred, image_raw_size, anchor_list, num_anc
 
 #get top n
     bois,scores = get_top_n(bboxes, scores, top = 12000)
-    print ("== = = = = after top:%.10f %.10f %.10f %.10f"%(bois[0][0], bois[0][1], bois[0][2], bois[0][3]))
+    #print ("== = = = = after top:%.10f %.10f %.10f %.10f"%(bois[0][0], bois[0][1], bois[0][2], bois[0][3]))
     #print ("top n, bois:",bois)
     #print ("top n, scores:",scores)
     #print ("shape:",bois.shape, scores.shape)
@@ -63,7 +63,7 @@ def get_proposal(cls_score_pred, bbox_pred, image_raw_size, anchor_list, num_anc
     zeros = np.zeros((bois.shape[0],1), dtype=np.float32)
     bois = np.hstack((zeros,bois))
 
-    print("get res score:",scores,"bbox:",bois)
+    #print("get res score:",scores,"bbox:",bois)
 
     #print ("final top n, bois:",bois)
     #print ("final top n, scores:",scores, scores.shape)
@@ -72,7 +72,7 @@ def get_proposal(cls_score_pred, bbox_pred, image_raw_size, anchor_list, num_anc
 def bbox_inv(anchors, delta_boxes, image_raw_size):
 
     #print ("delta box:",delta_boxes)
-    print("inv:",anchors.dtype,delta_boxes.dtype)
+    #print("inv:",anchors.dtype,delta_boxes.dtype)
     bbox = np.zeros((len(anchors), 4))
     for i, (anchor, delta) in enumerate(zip(anchors, delta_boxes)):
         w = anchor[2]-anchor[0]+1.0
@@ -98,27 +98,12 @@ def bbox_inv(anchors, delta_boxes, image_raw_size):
         pre_y = pre_y.astype(delta_boxes.dtype)
         pre_w = pre_w.astype(delta_boxes.dtype)
         pre_h = pre_h.astype(delta_boxes.dtype)
-        if i == 8754:
-            print ("??? type:",pre_x.dtype, pre_y.dtype, pre_w.dtype, pre_h.dtype, (pre_x-0.5*pre_w).dtype)
-            print ("pre:%.10f %.10f %.10f %.10f( %.10f, %.10f, %.10f)"%(pre_x, pre_y, pre_w, pre_h, pre_x-pre_w/2,pre_x-0.5*pre_w, pre_x-pre_w/2.0 ))
         bbox[i]=(pre_x - pre_w/2.0, pre_y - pre_h/2.0, pre_x + pre_w/2.0, pre_y + pre_h/2.0)
         bbox[i] = bbox[i].astype(delta_boxes.dtype)
-        if i == 8754:
-            print ("???%.10f" % bbox[i][0])
-            print ("xxx:",w,h,center_x, center_y)
-            print ("dx,dy:",dx,dy,dw,dh)
-            print ("%.10f %.10f %.10f %.10f, %.10f"%(pre_x, dx,w,center_x, dx*w),type(dx),type(w))
-            print ("pred:",pre_x, pre_y, pre_w, pre_h)
-            print ("pro box:",bbox[0])
-        if i == 8754:
-            print ("1111 == = = = =:%.10f %.10f %.10f %.10f"%(bbox[i][0], bbox[i][1], bbox[i][2], bbox[i][3]))
-            print ("img:",image_raw_size[0], image_raw_size[1])
         bbox[i][0] = max(0, min(bbox[i][0],image_raw_size[1]-1))
         bbox[i][1] = max(0, min(bbox[i][1],image_raw_size[0]-1))
         bbox[i][2] = max(0, min(image_raw_size[1]-1, bbox[i][2]))
         bbox[i][3] = max(0, min(image_raw_size[0]-1, bbox[i][3]))
-        if i == 8754:
-            print ("== = = = =:%.10f %.10f %.10f %.10f"%(bbox[i][0], bbox[i][1], bbox[i][2], bbox[i][3]))
 
     return bbox
 
@@ -126,7 +111,7 @@ def bbox_inv(anchors, delta_boxes, image_raw_size):
 
 def get_top_n(bboxes, scores, top=0):
     idx = scores.argsort()[::-1]
-    print ("top n oder:",idx[0:10])
+    #print ("top n oder:",idx[0:10])
     #print ("top n bbox shape:",bboxes.shape, "scores shape:",scores.shape)
     if top:
         idx = idx[:top]

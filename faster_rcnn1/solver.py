@@ -1,39 +1,35 @@
 
 from data_input import combined_roidb
+from data_input import filter_roidb
 from vgg16 import Vgg16
 from faster_rcnn import FasterRCNN
 import numpy as np
 import tensorflow as tf
 import random
+import os
 from roi_data_layer.layer import RoIDataLayer
 
 LEARNING_RATE = 0.001
 GAMMA = 0.1
+SAVE_STEP = 20
 
 class Solver():
     def __init__(self, imdb, roidb, pretrain_model):
         self.imdb = imdb
         self.roidb = roidb
-
         self.pretrain_model = pretrain_model
+        self.model_dir = "./model_log/"
         self.cnn_net = Vgg16()
         self.faster_rcnn = FasterRCNN(self.cnn_net, self.imdb.num_classes, batch_size=256, is_training=True)
+
         self.faster_rcnn.build()
 
     def train_net(self,max_iters=70000):
         """Train a Faster R-CNN network."""
-        roidb = self.filter_roidb(self.roidb)
-
-        load_vars = []
-        train_vars = tf.global_variables()
-        for var in train_vars:
-            if var.name.startswith("vgg_16"):
-                load_vars.append(var)
-
+        roidb = filter_roidb(self.roidb)
 
         tfconfig = tf.ConfigProto(allow_soft_placement=True)
         tfconfig.gpu_options.allow_growth = True
-        saver = tf.train.Saver(load_vars)
 
         with tf.Session(config=tfconfig) as sess:
             self.initialize(sess, self.pretrain_model)
@@ -55,45 +51,36 @@ class Solver():
         tf.set_random_seed(1234)
         random.seed(1234)
 
+        self.saver = tf.train.Saver(max_to_keep=100000)
+        try:
+            checkpoint_dir = self.model_dir
+            print("Trying to restore last checkpoint ...:",checkpoint_dir)
+            last_chk_path = tf.train.latest_checkpoint(checkpoint_dir=checkpoint_dir)
+            self.saver.restore(sess, save_path=last_chk_path)
+            print("restore last checkpoint %s done"%checkpoint_dir)
+        except Exception as e:
+            print("Failed to restore checkpoint. Initializing variables instead."),e
 
-        # Initial file lists are empty
-        np_paths = []
-        ss_paths = []
-        # Fresh train directly from ImageNet weights
-        print('Loading initial model weights from {:s}'.format(pretrained_model))
-        variables = tf.global_variables()
-        # Initialize all variables first
-        sess.run(tf.variables_initializer(variables, name='init'))
-        var_keep_dic = self.get_variables_in_checkpoint_file(pretrained_model)
-        print ("var keep dic:",var_keep_dic)
-        # Get the variables to restore, ignoring the variables to fix
-        variables_to_restore = self.cnn_net.get_variables_to_restore(variables, var_keep_dic)
-        #variables_to_restore = self.net.get_variables_to_restore(variables, var_keep_dic)
-        print ("var to restore:",variables_to_restore)
-        #print ("vgg variables:",variables, self.pretrained_model)
-        restorer = tf.train.Saver(variables_to_restore)
+            # Initial file lists are empty
+            # Fresh train directly from ImageNet weights
+            print('Loading initial model weights from {:s}'.format(pretrained_model))
+            variables = tf.global_variables()
+            # Initialize all variables first
+            sess.run(tf.variables_initializer(variables, name='init'))
+            var_keep_dic = self.get_variables_in_checkpoint_file(pretrained_model)
+            variables_to_restore = self.cnn_net.get_variables_to_restore(variables, var_keep_dic)
+            restorer = tf.train.Saver(variables_to_restore)
+            restorer.restore(sess, pretrained_model)
 
-        #load_vars = []
-        #for var in var_keep_dic:
-        #    load_vars.append(var)
-        #print (load_vars)
+            print('Loaded.')
+            self.cnn_net.fix_variables(sess, pretrained_model)
 
-        #restorer = tf.train.Saver(load_vars)
-        restorer.restore(sess, pretrained_model)
-        #g_vars= tf.global_variables()
+            print('Fixed.')
+            return
 
-        print('Loaded.')
-      # Need to fix the variables before loading, so that the RGB weights are changed to BGR
-      # For VGG16 it also changes the convolutional weights fc6 and fc7 to
-      # fully connected weights
-        self.cnn_net.fix_variables(sess, pretrained_model)
-      #self.net.fix_variables(sess, self.pretrained_model)
-        print('Fixed.')
-        #last_snapshot_iter = 0
-        #rate = cfg.TRAIN.LEARNING_RATE
-        #stepsizes = list(cfg.TRAIN.STEPSIZE)
-
-        return
+    def save_model(self, sess):
+        self.saver.save(sess, os.path.join(self.model_dir,'cp'))
+        print ("save model:",os.path.join(self.model_dir,'cp'))
 
     def train_model(self, sess, max_iters):
         print "train:", self.roidb
@@ -104,7 +91,7 @@ class Solver():
         next_step = [0, 20]
         # Make sure the lists are not empty
         while iter < max_iters + 1:
-            if len(next_step) > 0 && iter == next_step[0]:
+            if len(next_step) > 0 and iter == next_step[0]:
                 self.faster_rcnn.assign_lr(sess, rate)
                 next_step=next_step[1:]
                 print ("next step:",next_step)
@@ -118,34 +105,8 @@ class Solver():
             self.faster_rcnn.train_step( sess, image, gt_boxes, im_info)
             iter+=1
 
-    def filter_roidb(self, roidb):
-      """Remove roidb entries that have no usable RoIs."""
-      FG_THRESH = 0.5
-      BG_THRESH_HI = 0.5
-      BG_THRESH_LO = 0.0
-      def is_valid(entry):
-        # Valid images have:
-        #   (1) At least one foreground RoI OR
-        #   (2) At least one background RoI
-        overlaps = entry['max_overlaps']
-        # find boxes with sufficient overlap
-        fg_inds = np.where(overlaps >= FG_THRESH)[0]
-        # Select background RoIs as those within [BG_THRESH_LO, BG_THRESH_HI)
-        bg_inds = np.where((overlaps < BG_THRESH_HI) &
-                           (overlaps >= BG_THRESH_LO))[0]
-        # image is only valid if such boxes exist
-        valid = len(fg_inds) > 0 or len(bg_inds) > 0
-        return valid
-
-      num = len(roidb)
-      filtered_roidb = [entry for entry in roidb if is_valid(entry)]
-      num_after = len(filtered_roidb)
-      print('Filtered {} roidb entries: {} -> {}'.format(num - num_after,
-                                                         num, num_after))
-      return filtered_roidb
-
-
-
+            if iter % SAVE_STEP == 0:
+                self.save_model(sess)
 
 def train():
 
