@@ -174,9 +174,18 @@ class FasterRCNN:
                     grad = tf.multiply(grad, scale)
                 final_gvs.append((grad, var))
            train_op = self.optimizer.apply_gradients(final_gvs, global_step=i_global_op)
+
+           for grad, var in final_gvs:
+            if grad is not None :
+                tf.summary.histogram(var.op.name + '/gradients', grad)
         else:
            train_op = self.optimizer.apply_gradients(gvs, global_step=i_global_op)
+           for grad, var in gvs:
+            if grad is not None :
+                tf.summary.histogram(var.op.name + '/gradients', grad)
 
+        self.summary_op = tf.summary.merge_all()
+        print ("summary op:",self.summary_op)
         return lr, train_op
 
     def get_cls_loss(self, predict, target):
@@ -193,12 +202,13 @@ class FasterRCNN:
 
         return tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_cls_score, labels=rpn_label))
 
-    def train_step(self, sess, image, gt_boxes, im_info ):
-        loss,lr,global_step, _ = sess.run( [self.loss, self.lr, self.global_op, self.train_op], feed_dict={self.image:image, self.gt_boxes:gt_boxes, self.im_info:im_info.reshape(-1)} )
+    def train_step(self, sess, image, gt_boxes, im_info):
+        loss,lr,global_step, _, summary_str = sess.run( [self.loss, self.lr, self.global_op, self.train_op, self.summary_op],
+                feed_dict={self.image:image, self.gt_boxes:gt_boxes, self.im_info:im_info.reshape(-1)} )
         import math
         assert not math.isnan(loss)
 
-        return loss, lr, global_step
+        return loss, lr, global_step, summary_str
 
     def assign_lr(self, sess, rate):
         sess.run(tf.assign(self.lr, rate))

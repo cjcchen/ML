@@ -19,10 +19,13 @@ class Solver():
         self.roidb = roidb
         self.pretrain_model = pretrain_model
         self.model_dir = "./model_log/"
+        self.log_dir = "./log/"
         self.cnn_net = Vgg16()
         self.faster_rcnn = FasterRCNN(self.cnn_net, self.imdb.num_classes, batch_size=256, is_training=True)
 
         self.faster_rcnn.build()
+
+
 
     def train_net(self,max_iters=70000):
         """Train a Faster R-CNN network."""
@@ -71,12 +74,9 @@ class Solver():
             variables_to_restore = self.cnn_net.get_variables_to_restore(variables, var_keep_dic)
             restorer = tf.train.Saver(variables_to_restore)
             restorer.restore(sess, pretrained_model)
-
-            print('Loaded.')
             self.cnn_net.fix_variables(sess, pretrained_model)
 
-            print('Fixed.')
-            return
+        self.writer = tf.summary.FileWriter(self.log_dir, sess.graph)
 
     def save_model(self, sess, global_step):
         self.saver.save(sess, os.path.join(self.model_dir,'cp'), global_step=global_step)
@@ -89,6 +89,8 @@ class Solver():
         iter = 0
         rate = LEARNING_RATE
         next_step = [0, 20]
+
+
         # Make sure the lists are not empty
         while iter < max_iters + 1:
             if len(next_step) > 0 and iter == next_step[0]:
@@ -102,9 +104,16 @@ class Solver():
             gt_boxes = blobs['gt_boxes']
             im_info = blobs['im_info']
 
-            loss, lr, global_step = self.faster_rcnn.train_step( sess, image, gt_boxes, im_info)
+            loss, lr, global_step, summary_str = self.faster_rcnn.train_step(sess, image, gt_boxes, im_info)
             iter+=1
             print ("===== loss:",loss, "lr:",lr, "global step:",global_step)
+
+            self.writer.add_summary(summary_str, global_step)
+
+            summary = tf.Summary()
+            summary.value.add(tag='loss', simple_value=loss)
+            summary.value.add(tag='lr', simple_value=lr)
+            self.writer.add_summary(summary, global_step)
 
             if iter % SAVE_STEP == 0:
                 self.save_model(sess, global_step)
