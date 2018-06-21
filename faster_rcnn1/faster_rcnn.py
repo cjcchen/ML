@@ -15,9 +15,16 @@ MOMENTUM = 0.9
 
 class FasterRCNN:
     def __init__(self, cnn_net, num_class, batch_size=1, is_training=True):
-        self.image = tf.placeholder(tf.float32, [1,None,None,3])
-        self.gt_boxes = tf.placeholder(tf.float32, [None,5])
-        self.im_info = tf.placeholder(tf.float32, [3])
+        self._scope = 'vgg_16'
+        if not is_training:
+            self.reuse = tf.AUTO_REUSE
+        else:
+            self.reuse = None
+
+        with tf.variable_scope(self._scope, self._scope, reuse=self.reuse):
+            self.image = tf.placeholder(tf.float32, [1,None,None,3])
+            self.gt_boxes = tf.placeholder(tf.float32, [None,5])
+            self.im_info = tf.placeholder(tf.float32, [3])
 
         self.cnn_net = cnn_net
         self.batch_size=batch_size
@@ -37,7 +44,6 @@ class FasterRCNN:
             conv_initializer = tf.random_normal_initializer(mean=0.0, stddev=0.01)
             initializer_bbox = tf.random_normal_initializer(mean=0.0, stddev=0.001)
 
-        self._scope = 'vgg_16'
         self.rpn = RPN(self.num_class, is_training, conv_initializer, self.batch_size)
         self.proposal = Proposal(self.num_class, is_training,  conv_initializer, self.batch_size)
 
@@ -51,18 +57,20 @@ class FasterRCNN:
                     biases_regularizer=biases_regularizer,
                     biases_initializer=tf.constant_initializer(0.0)):
 
-            self.cnn_net.build(self.image)
+            self.cnn_net.build(self.image, is_training = self.is_training)
 
             self.feature_input = self.cnn_net.get_output()
 
-            rois = self.build_proposal()
-            pool5 = self._crop_pool_layer(self.feature_input, rois, "crop")
+            with tf.variable_scope(self._scope, self._scope, reuse=self.reuse):
+                rois = self.build_proposal()
+                pool5 = self._crop_pool_layer(self.feature_input, rois, "crop")
 
-            self.build_tail(pool5)
+                self.build_tail(pool5)
 
-            self.build_loss()
+                self.build_loss()
 
-            self.lr, self.train_op = self.build_train_op()
+            if self.is_training:
+                self.lr, self.train_op = self.build_train_op()
 
 
     def build_proposal(self):
@@ -78,40 +86,38 @@ class FasterRCNN:
         return self.proposal.rois
 
     def build_tail(self, rois):
-        with tf.variable_scope(self._scope, self._scope, reuse=None):
-            flatten_rois = slim.flatten(rois, scope='flatten')
-            fc5 = slim.fully_connected(flatten_rois, 4096, scope="fc6")
-            if self.is_training:
-                fc5 = slim.dropout(fc5, keep_prob=0.5, is_training=True, scope='dropout6')
+        flatten_rois = slim.flatten(rois, scope='flatten')
+        fc5 = slim.fully_connected(flatten_rois, 4096, scope="fc6")
+        if self.is_training:
+            fc5 = slim.dropout(fc5, keep_prob=0.5, is_training=True, scope='dropout6')
 
-            fc6 = slim.fully_connected(fc5, 4096, scope="fc7")
-            if self.is_training:
-                fc6 = slim.dropout(fc6, keep_prob=0.5, is_training=True, scope='dropout7')
+        fc6 = slim.fully_connected(fc5, 4096, scope="fc7")
+        if self.is_training:
+            fc6 = slim.dropout(fc6, keep_prob=0.5, is_training=True, scope='dropout7')
 
-            self.cls_logit = slim.fully_connected(fc6, self.num_class, scope="cls_logit")
-            self.cls_softmax = tf.nn.softmax(self.cls_logit)
-            self.cls_prob = self.cls_softmax
-            self.cls_pred = tf.argmax(self.cls_prob, axis=1, name="cls_pred")
+        self.cls_logit = slim.fully_connected(fc6, self.num_class, scope="cls_logit")
+        self.cls_softmax = tf.nn.softmax(self.cls_logit)
+        self.cls_prob = self.cls_softmax
+        self.cls_pred = tf.argmax(self.cls_prob, axis=1, name="cls_pred")
 
-            self.bbox_logit = slim.fully_connected(fc6, self.num_class*4, scope="bbox_logit")
-            self.bbox_pred = self.bbox_logit
+        self.bbox_logit = slim.fully_connected(fc6, self.num_class*4, scope="bbox_logit")
+        self.bbox_pred = self.bbox_logit
 
 
     def _crop_pool_layer(self, bottom, rois, name):
-        with tf.variable_scope(name) as scope:
-            batch_ids = tf.squeeze(tf.slice(rois, [0, 0], [-1, 1], name="batch_id"), [1])
+        batch_ids = tf.squeeze(tf.slice(rois, [0, 0], [-1, 1], name="batch_id"), [1])
 # Get the normalized coordinates of bounding boxes
-            bottom_shape = tf.shape(bottom)
-            height = (tf.to_float(bottom_shape[1]) - 1.) * np.float32(self._feat_stride)
-            width = (tf.to_float(bottom_shape[2]) - 1.) * np.float32(self._feat_stride)
-            x1 = tf.slice(rois, [0, 1], [-1, 1], name="x1") / width
-            y1 = tf.slice(rois, [0, 2], [-1, 1], name="y1") / height
-            x2 = tf.slice(rois, [0, 3], [-1, 1], name="x2") / width
-            y2 = tf.slice(rois, [0, 4], [-1, 1], name="y2") / height
+        bottom_shape = tf.shape(bottom)
+        height = (tf.to_float(bottom_shape[1]) - 1.) * np.float32(self._feat_stride)
+        width = (tf.to_float(bottom_shape[2]) - 1.) * np.float32(self._feat_stride)
+        x1 = tf.slice(rois, [0, 1], [-1, 1], name="x1") / width
+        y1 = tf.slice(rois, [0, 2], [-1, 1], name="y1") / height
+        x2 = tf.slice(rois, [0, 3], [-1, 1], name="x2") / width
+        y2 = tf.slice(rois, [0, 4], [-1, 1], name="y2") / height
 # Won't be back-propagated to rois anyway, but to save time
-            bboxes = tf.stop_gradient(tf.concat([y1, x1, y2, x2], axis=1))
-            pre_pool_size = POOLING_SIZE * 2
-            crops = tf.image.crop_and_resize(bottom, bboxes, tf.to_int32(batch_ids), [pre_pool_size, pre_pool_size], name="crops")
+        bboxes = tf.stop_gradient(tf.concat([y1, x1, y2, x2], axis=1))
+        pre_pool_size = POOLING_SIZE * 2
+        crops = tf.image.crop_and_resize(bottom, bboxes, tf.to_int32(batch_ids), [pre_pool_size, pre_pool_size], name="crops")
 
         return slim.max_pool2d(crops, [2, 2], padding='SAME')
 
@@ -209,6 +215,13 @@ class FasterRCNN:
         assert not math.isnan(loss)
 
         return loss, lr, global_step, summary_str
+
+    def get_loss(self, sess, image, gt_boxes, im_info):
+        loss = sess.run( self.loss, feed_dict={self.image:image, self.gt_boxes:gt_boxes, self.im_info:im_info.reshape(-1)} )
+        import math
+        assert not math.isnan(loss)
+
+        return loss
 
     def assign_lr(self, sess, rate):
         sess.run(tf.assign(self.lr, rate))
