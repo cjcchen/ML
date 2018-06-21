@@ -17,14 +17,7 @@ random.seed(1234)
 import os
 import cv2
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "7"
-
 def gen_target(image, gt_boxes, image_raw_size, num_anchors, anchor_list, batch_size):
-    #print image.shape
-    #print gt_boxes.shape
-    #print image_raw_size.shape
-    #print anchor_size
-    #print base_anchors
     labels, bbox_targets,inside_weights,outside_weights = \
             tf.py_func(gen_target_py, [image, gt_boxes, image_raw_size, anchor_list, batch_size],
                     [tf.float32, tf.float32, tf.float32, tf.float32])
@@ -72,6 +65,29 @@ def get_label(anchor_list,gt_box, image_raw_size, batch_size):
     over_lap_matrix = np.zeros([len(anchor_list), len(gt_box)])
     label = np.zeros(len(anchor_list))
     label.fill(-1)
+
+    inside_idx = np.where(
+            (anchor_list[:,0]>=0 )&
+            (anchor_list[:,1] >=0 )&
+            (anchor_list[:,2] < image_raw_size[1] )&
+            (anchor_list[:,3] < image_raw_size[0])
+            )[0]
+
+    over_lap_matrix = bbox_overlaps(
+        np.ascontiguousarray(anchor_list, dtype=np.float),
+        np.ascontiguousarray(gt_box, dtype=np.float))
+
+    anchor_max_idx = over_lap_matrix.argmax(axis=1)
+    over_lap_max = over_lap_matrix[np.arange(len(anchor_list)), anchor_max_idx ]
+    print ("over lap max shape:",over_lap_max.shape)
+
+    label[over_lap_max >= RPN_POSITIVE_OVERLAP] = 1
+    label[(over_lap_max < RPN_NEGATIVE_OVERLAP)] = 0
+    for i in range(len(anchor_list)):
+        if i not in inside_idx:
+            label[i] = -1
+
+    '''
     for i, anchor in enumerate(anchor_list):
         max_area = -1.0
         index = -1
@@ -87,6 +103,15 @@ def get_label(anchor_list,gt_box, image_raw_size, batch_size):
                 label[i] = 1
             elif max_area < RPN_NEGATIVE_OVERLAP:
                 label[i] = 0
+            inside_index.append(i)
+    '''
+
+
+    gt_max_index = over_lap_matrix.argmax(axis=0)
+    gt_max = over_lap_matrix[ gt_max_index, np.arange(over_lap_matrix.shape[1])]
+    gt_max_index = np.where(over_lap_matrix==gt_max)[0]
+    label[ gt_max_index ] = 1
+    '''
     for j,box in enumerate(gt_box):
         max_area = 0.0
         index = -1
@@ -99,6 +124,8 @@ def get_label(anchor_list,gt_box, image_raw_size, batch_size):
             for i in range(len(anchor_list)):
                 if over_lap_matrix[i,j] == max_area:
                     label[i] = 1
+    '''
+
     fg_num = int(RPN_FG_FACTOR * batch_size)
     fg_index = np.where(label == 1)[0]
     #print ("fg num:",fg_num, len(fg_index))
@@ -123,7 +150,31 @@ def get_label(anchor_list,gt_box, image_raw_size, batch_size):
     dw = np.zeros(len(anchor_list))
     dh = np.zeros(len(anchor_list))
 
+
+    ws = anchor_list[inside_idx,2]-anchor_list[inside_idx,0]+1.0
+    hs = anchor_list[inside_idx,3]-anchor_list[inside_idx,1]+1.0
+    center_xs = anchor_list[inside_idx,0] + ws/2
+    center_ys = anchor_list[inside_idx,1] + hs/2
+
+    gt_target = gt_box[ anchor_max_idx ]
+
+    target_w = gt_target[inside_idx,2]-gt_target[inside_idx,0]+1.0
+    target_h = gt_target[inside_idx,3]-gt_target[inside_idx,1]+1.0
+    target_center_x = gt_target[inside_idx,0] + target_w/2.0
+    target_center_y = gt_target[inside_idx,1] + target_h/2.0
+
+    dx[inside_idx] = (target_center_x-center_xs)/ws
+    dy[inside_idx] = (target_center_y-center_ys)/hs
+    dw[inside_idx] = np.log(target_w/ws)
+    dh[inside_idx] = np.log(target_h/hs)
+
     num_examples = np.sum(label>=0)
+
+    in_weight[label==1] = [1.0]*4
+    out_weight[label==1] = [1.0/num_examples]*4
+    out_weight[label==0] = [1.0/num_examples]*4
+
+    '''
     for i, anchor in enumerate(anchor_list):
         w = anchor[2]-anchor[0]+1.0
         h = anchor[3]-anchor[1]+1.0
@@ -148,6 +199,7 @@ def get_label(anchor_list,gt_box, image_raw_size, batch_size):
                 out_weight[i] = [1.0/num_examples]*4
             if label[i]==0:
                 out_weight[i] = [1.0/num_examples]*4
+    '''
     bbox_target = np.vstack( (dx,dy,dw,dh) ).transpose()
     #print ("1548:",label[1548])
     return label, bbox_target,in_weight, out_weight

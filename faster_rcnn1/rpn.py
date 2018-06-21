@@ -6,9 +6,6 @@ import tensorflow.contrib.slim as slim
 
 class RPN:
     def __init__(self, num_class, is_training, weights_initializer, batch_size):
-        #self.feature = tf.placeholder(tf.float32, [1, None, None, 512])
-        #self.gt = tf.placeholder(tf.int32, [None,5])
-        #self.im_info = tf.placeholder(tf.float32,[3])
         self.num_class = num_class
         self.is_training = is_training
         self.batch_size = batch_size
@@ -17,28 +14,21 @@ class RPN:
     def build(self, feature, gt, im_info, num_anchors, anchor_list):
         print "feature shape:",feature
         rpn = slim.conv2d(feature, 512, [3, 3], trainable=self.is_training, weights_initializer=self.weights_initializer, scope="rpn_conv/3x3")
-        #rpn = slim.conv2d(feature, feature.get_shape()[-1], [3, 3], trainable=self.is_training, weights_initializer=self.weights_initializer, scope="rpn_conv/3x3")
-        #feature = self.bn(feature)
         print "feature shape after conv:",feature.shape
 
         with tf.variable_scope('cls'):
             rpn_cls_score = slim.conv2d(rpn, 2*num_anchors, [1, 1], trainable=self.is_training, padding='VALID', weights_initializer=self.weights_initializer, scope="rpn_cls_score")
-            #cls = self.bn(cls)
             print "cls shape:",rpn_cls_score
 
             rpn_cls_score_reshape = self._reshape_layer(rpn_cls_score, 2,"rpn_cls_score_reshape")
-#tf.reshape(rpn_cls_score, [-1, tf.shape(rpn_cls_score)[1], tf.shape(rpn_cls_score)[2]*self.num_anchors, 2])
-            #rpn_cls_prob_reshape = tf.nn.softmax(rpn_cls_score_reshape)
             rpn_cls_prob_reshape = self._softmax_layer(rpn_cls_score_reshape, "rpn_cls_prob_reshape")
             rpn_cls_pred = tf.argmax(tf.reshape(rpn_cls_score_reshape, [-1, 2]), axis=1, name="rpn_cls_pred")
 #for proposal
-            #rpn_cls_pred = tf.reshape(rpn_cls_prob_reshape, [-1, tf.shape(rpn_cls_score)[1], tf.shape(rpn_cls_score)[2], self.num_anchors*2])
             rpn_cls_prob = self._reshape_layer(rpn_cls_score, 2*num_anchors,"rpn_cls_prob")
 
         with tf.variable_scope('bbox'):
             rpn_bbox_pred = slim.conv2d(feature, 4*num_anchors, [1, 1], trainable=self.is_training, padding='VALID', activation_fn=None,
                     weights_initializer=self.weights_initializer, scope="rpn_bbox_pred")
-            #bbox = self.bn(bbox)
 #for proposal
             print "bbox shape:",rpn_bbox_pred
 

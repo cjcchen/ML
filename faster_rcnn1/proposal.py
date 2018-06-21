@@ -13,7 +13,7 @@ class Proposal:
 
     def build(self, rpn_cls_pred, rpn_bbox_pred, gt_box, im_info, num_anchors, anchor_list):
 
-        bois, scores = gen_proposal(rpn_cls_pred, rpn_cls_pred, im_info, anchor_list, num_anchors)
+        bois, scores = gen_proposal(rpn_cls_pred, rpn_bbox_pred, im_info, anchor_list, num_anchors)
 
         self.bois = bois
 

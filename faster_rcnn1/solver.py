@@ -6,12 +6,13 @@ from faster_rcnn import FasterRCNN
 import numpy as np
 import tensorflow as tf
 import random
+import time
 import os
 from roi_data_layer.layer import RoIDataLayer
 
 LEARNING_RATE = 0.001
 GAMMA = 0.1
-SAVE_STEP = 2
+SAVE_STEP = 200
 
 class Solver():
     def __init__(self, imdb, roidb, val_imdb, val_roidb, pretrain_model):
@@ -45,7 +46,7 @@ class Solver():
         tfconfig.gpu_options.allow_growth = True
 
         with tf.Session(config=tfconfig) as sess:
-            with tf.device("/cpu:0"):
+            with tf.device("/gpu:0"):
                 self.initialize(sess, self.pretrain_model)
                 self.train_model(sess, max_iters)
 
@@ -101,8 +102,7 @@ class Solver():
         self.val_data_layer = RoIDataLayer(self.val_roidb, self.val_imdb.num_classes)
         iter = 0
         rate = LEARNING_RATE
-        next_step = [0, 20]
-
+        next_step = [50000]
 
         # Make sure the lists are not empty
         while iter < max_iters + 1:
@@ -118,41 +118,47 @@ class Solver():
             gt_boxes = blobs['gt_boxes']
             im_info = blobs['im_info']
 
-            loss, lr, global_step, summary_str = self.faster_rcnn.train_step(sess, image, gt_boxes, im_info)
+            start_time = time.time()
+            loss, lr, global_step = self.faster_rcnn.train_step(sess, image, gt_boxes, im_info)
+            #loss, lr, global_step, summary_str = self.faster_rcnn.train_step(sess, image, gt_boxes, im_info)
             iter+=1
-            print ("===== loss:",loss, "lr:",lr, "global step:",global_step)
+            diff = time.time() - start_time
+            print ("===== loss:",loss, "lr:",lr, "global step:",global_step, "time:",diff)
 
-            self.writer.add_summary(summary_str, global_step)
-
-            summary = tf.Summary()
-            summary.value.add(tag='loss', simple_value=loss)
-            summary.value.add(tag='lr', simple_value=lr)
-            self.writer.add_summary(summary, global_step)
+            if iter % 100 == 0:
+                self.writer.add_summary(summary_str, global_step)
+                summary = tf.Summary()
+                summary.value.add(tag='loss', simple_value=loss)
+                summary.value.add(tag='lr', simple_value=lr)
+                self.writer.add_summary(summary, global_step)
 
             if iter % SAVE_STEP == 0:
                 self.save_model(sess, global_step)
 
                 val_blobs = self.val_data_layer.forward()
-                print ("val_blobs['data']",val_blobs['data'], val_blobs['gt_boxes'])
-                print (val_blobs['gt_boxes'])
-                print (val_blobs['im_info'])
+                #print ("val_blobs['data']",val_blobs['data'], val_blobs['gt_boxes'])
+                #print (val_blobs['gt_boxes'])
+                #print (val_blobs['im_info'])
                 val_loss = self.val_faster_rcnn.get_loss(sess, val_blobs['data'], val_blobs['gt_boxes'], val_blobs['im_info'])
                 print ("val loss:",val_loss)
+                summary = tf.Summary()
+                summary.value.add(tag='loss', simple_value=loss)
+                self.val_writer.add_summary(summary, global_step)
 
 def train():
 
     imdb, roidb = combined_roidb('voc_2007_trainval')
     val_imdb, val_roidb = combined_roidb('voc_2007_test')
 
-    from roi_data_layer.minibatch import get_minibatch
-    for roi in roidb:
-        if not roi['flipped']:
-            print roi
-            print roi['gt_classes']
-            print roi['max_classes']
-            print roi['boxes']
+    #from roi_data_layer.minibatch import get_minibatch
+    #for roi in roidb:
+    #    if not roi['flipped']:
+    #        print roi
+    #        print roi['gt_classes']
+    #        print roi['max_classes']
+    #        print roi['boxes']
 
     sv = Solver(imdb, roidb, val_imdb, val_roidb, "tf-faster-rcnn/data/imagenet_weights/vgg16.ckpt")
-    sv.train_net(30)
+    sv.train_net()
 
 train()

@@ -209,12 +209,15 @@ class FasterRCNN:
         return tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_cls_score, labels=rpn_label))
 
     def train_step(self, sess, image, gt_boxes, im_info):
-        loss,lr,global_step, _, summary_str = sess.run( [self.loss, self.lr, self.global_op, self.train_op, self.summary_op],
+        loss,lr,global_step = sess.run( [self.loss, self.lr, self.global_op],
                 feed_dict={self.image:image, self.gt_boxes:gt_boxes, self.im_info:im_info.reshape(-1)} )
+        #loss,lr,global_step, _, summary_str = sess.run( [self.loss, self.lr, self.global_op, self.train_op, self.summary_op],
+        #        feed_dict={self.image:image, self.gt_boxes:gt_boxes, self.im_info:im_info.reshape(-1)} )
         import math
         assert not math.isnan(loss)
 
-        return loss, lr, global_step, summary_str
+        return loss, lr, global_step
+        #return loss, lr, global_step, summary_str
 
     def get_loss(self, sess, image, gt_boxes, im_info):
         loss = sess.run( self.loss, feed_dict={self.image:image, self.gt_boxes:gt_boxes, self.im_info:im_info.reshape(-1)} )
