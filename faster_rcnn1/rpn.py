@@ -12,13 +12,10 @@ class RPN:
         self.weights_initializer = weights_initializer
 
     def build(self, feature, gt, im_info, num_anchors, anchor_list):
-        print "feature shape:",feature
         rpn = slim.conv2d(feature, 512, [3, 3], trainable=self.is_training, weights_initializer=self.weights_initializer, scope="rpn_conv/3x3")
-        print "feature shape after conv:",feature.shape
 
         with tf.variable_scope('cls'):
             rpn_cls_score = slim.conv2d(rpn, 2*num_anchors, [1, 1], trainable=self.is_training, padding='VALID', weights_initializer=self.weights_initializer, scope="rpn_cls_score")
-            print "cls shape:",rpn_cls_score
 
             rpn_cls_score_reshape = self._reshape_layer(rpn_cls_score, 2,"rpn_cls_score_reshape")
             rpn_cls_prob_reshape = self._softmax_layer(rpn_cls_score_reshape, "rpn_cls_prob_reshape")
@@ -30,7 +27,6 @@ class RPN:
             rpn_bbox_pred = slim.conv2d(feature, 4*num_anchors, [1, 1], trainable=self.is_training, padding='VALID', activation_fn=None,
                     weights_initializer=self.weights_initializer, scope="rpn_bbox_pred")
 #for proposal
-            print "bbox shape:",rpn_bbox_pred
 
         labels, bbox_targets,inside_weights,outside_weights = gen_target(feature, gt, im_info, num_anchors, anchor_list, self.batch_size)
 
@@ -53,7 +49,6 @@ class RPN:
 
     def _reshape_layer(self, bottom, num_dim, name):
         input_shape = tf.shape(bottom)
-        print ("====== reshape:",bottom)
         with tf.variable_scope(name) as scope:
 # change the channel to the caffe format
             to_caffe = tf.transpose(bottom, [0, 3, 1, 2])
@@ -79,7 +74,6 @@ class RPN:
     def conv(self,x, shape, stride, initializer=tf.contrib.layers.xavier_initializer(uniform=False)):
         with tf.variable_scope('conv'):
             weights = tf.get_variable('conv_weights', shape=shape, dtype='float', initializer=initializer)
-            print weights
             x = tf.nn.conv2d(x, weights, [1,stride,stride,1], padding='SAME')
             return x
 

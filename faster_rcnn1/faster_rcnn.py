@@ -38,16 +38,16 @@ class FasterRCNN:
         self.num_anchors = len(self.anchor_ratio) * len(self.base_anchors)
 
         if is_training:
-            conv_initializer = tf.truncated_normal_initializer(mean=0.0, stddev=0.01)
-            initializer_bbox = tf.truncated_normal_initializer(mean=0.0, stddev=0.001)
+            self.initializer = tf.truncated_normal_initializer(mean=0.0, stddev=0.01)
+            self.initializer_bbox = tf.truncated_normal_initializer(mean=0.0, stddev=0.001)
         else:
-            conv_initializer = tf.random_normal_initializer(mean=0.0, stddev=0.01)
-            initializer_bbox = tf.random_normal_initializer(mean=0.0, stddev=0.001)
+            self.initializer = tf.random_normal_initializer(mean=0.0, stddev=0.01)
+            self.initializer_bbox = tf.random_normal_initializer(mean=0.0, stddev=0.001)
 
-        self.rpn = RPN(self.num_class, is_training, conv_initializer, self.batch_size)
-        self.proposal = Proposal(self.num_class, is_training,  conv_initializer, self.batch_size)
+        self.rpn = RPN(self.num_class, is_training, self.initializer, self.batch_size)
+        self.proposal = Proposal(self.num_class, is_training,  self.initializer, self.batch_size)
 
-    def build(self):
+    def build(self, mode):
         weights_regularizer = tf.contrib.layers.l2_regularizer(WEIGHT_DECAY)
         biases_regularizer = tf.no_regularizer
 
@@ -57,7 +57,7 @@ class FasterRCNN:
                     biases_regularizer=biases_regularizer,
                     biases_initializer=tf.constant_initializer(0.0)):
 
-            self.cnn_net.build(self.image, is_training = self.is_training)
+            self.cnn_net.build(self.image, is_training = self.is_training, mode=mode)
 
             self.feature_input = self.cnn_net.get_output()
 
@@ -67,9 +67,8 @@ class FasterRCNN:
 
                 self.build_tail(pool5)
 
-                self.build_loss()
-
             if self.is_training:
+                self.build_loss()
                 self.lr, self.train_op = self.build_train_op()
 
 
@@ -95,13 +94,18 @@ class FasterRCNN:
         if self.is_training:
             fc6 = slim.dropout(fc6, keep_prob=0.5, is_training=True, scope='dropout7')
 
-        self.cls_logit = slim.fully_connected(fc6, self.num_class, scope="cls_logit")
-        self.cls_softmax = tf.nn.softmax(self.cls_logit)
-        self.cls_prob = self.cls_softmax
+        self.cls_logit = slim.fully_connected(fc6, self.num_class,
+                                        weights_initializer=self.initializer,
+                                       trainable=self.is_training,
+                                       activation_fn=None, scope='cls_logit')
+        self.cls_prob = tf.nn.softmax(self.cls_logit)
         self.cls_pred = tf.argmax(self.cls_prob, axis=1, name="cls_pred")
 
-        self.bbox_logit = slim.fully_connected(fc6, self.num_class*4, scope="bbox_logit")
-        self.bbox_pred = self.bbox_logit
+        self.bbox_logit = slim.fully_connected(fc6, self.num_class*4,
+                                     weights_initializer=self.initializer_bbox,
+                                     trainable=self.is_training,
+                                     activation_fn=None, scope='bbox_logit')
+        self.bbox_delta_pred = self.bbox_logit
 
 
     def _crop_pool_layer(self, bottom, rois, name):
@@ -133,6 +137,7 @@ class FasterRCNN:
 # RCNN, class loss
         cls_label = tf.to_int32(self.proposal.cls_label, name="to_int32")
         cls_label = tf.reshape(cls_label, [-1])
+        print ("loss:",cls_label.shape)
         cls_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.cls_logit, labels=cls_label))#[-1, 21], [-1,1]
         self.cross_entropy = cls_loss
 
@@ -191,7 +196,6 @@ class FasterRCNN:
                 tf.summary.histogram(var.op.name + '/gradients', grad)
 
         self.summary_op = tf.summary.merge_all()
-        print ("summary op:",self.summary_op)
         return lr, train_op
 
     def get_cls_loss(self, predict, target):
@@ -209,15 +213,12 @@ class FasterRCNN:
         return tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_cls_score, labels=rpn_label))
 
     def train_step(self, sess, image, gt_boxes, im_info):
-        loss,lr,global_step = sess.run( [self.loss, self.lr, self.global_op],
+        loss,lr,global_step, _, summary_str = sess.run( [self.loss, self.lr, self.global_op, self.train_op, self.summary_op],
                 feed_dict={self.image:image, self.gt_boxes:gt_boxes, self.im_info:im_info.reshape(-1)} )
-        #loss,lr,global_step, _, summary_str = sess.run( [self.loss, self.lr, self.global_op, self.train_op, self.summary_op],
-        #        feed_dict={self.image:image, self.gt_boxes:gt_boxes, self.im_info:im_info.reshape(-1)} )
         import math
         assert not math.isnan(loss)
 
-        return loss, lr, global_step
-        #return loss, lr, global_step, summary_str
+        return loss, lr, global_step, summary_str
 
     def get_loss(self, sess, image, gt_boxes, im_info):
         loss = sess.run( self.loss, feed_dict={self.image:image, self.gt_boxes:gt_boxes, self.im_info:im_info.reshape(-1)} )
@@ -225,6 +226,46 @@ class FasterRCNN:
         assert not math.isnan(loss)
 
         return loss
+
+    def predict(self,sess,image, im_info):
+#score and delta bbox
+        score, delta_bbox, rois = sess.run( [self.cls_prob, self.bbox_delta_pred, self.proposal.rois],
+                feed_dict={self.image:image, self.im_info:im_info.reshape(-1)} )
+
+        bbox = self.proposal.bbox_target_inv(rois, delta_bbox, im_info)
+        print ("get delta:",delta_bbox,delta_bbox.shape)
+        print ("get inv:",bbox, bbox.shape)
+
+
+        assert score.shape[1] == self.num_class
+        image_score_list = []
+        image_bbox_list = []
+        thresh = 0
+        for i in range(self.num_class):
+            inds = np.where( score[:,i] > thresh )[0]
+            image_score = score[inds,i]
+            image_bbox = bbox[inds, i*4:(i+1)*4]
+            print "class:",i,image_score
+            print "class:",i,image_bbox
+            image_score_list.append(image_score)
+            image_bbox_list.append(image_bbox)
+
+        image_scores = np.hstack([image_score_list[i] for i in range(1, self.num_class)])
+        print image_scores
+        image_thresh = np.sort(image_scores)[-1]
+        print ("thresh:",image_thresh)
+        res_score = []
+        res_bbox = []
+        for i in range(1, self.num_class):
+            keep = image_score_list[i]>= image_thresh
+
+            image_score = image_score_list[i][keep]
+            image_bbox = image_bbox_list[i][keep]
+            res_score.append(image_score)
+            res_bbox.append(image_bbox)
+            print ("get sore:",keep, i,image_score_list[i][keep].shape)
+        return res_score, res_bbox
+
 
     def assign_lr(self, sess, rate):
         sess.run(tf.assign(self.lr, rate))

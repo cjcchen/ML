@@ -32,7 +32,7 @@ def get_anchors_py(image, image_raw_size, anchor_ratio, base_anchors):
     for s in anchor_ratio:
         w = np.round(np.sqrt(anchor_area/s))
         h = np.round(s*w)
-        print ("get w:",w,h)
+        #print ("get w:",w,h)
         for radio in base_anchors:
             rw = w * radio-1
             rh = h * radio-1

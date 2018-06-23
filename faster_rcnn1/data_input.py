@@ -19,7 +19,6 @@ def combined_roidb(imdb_names):
 
   roidbs = [get_roidb(s) for s in imdb_names.split('+')]
   roidb = roidbs[0]
-  print ("roidbs:",len(roidb))
   if len(roidbs) > 1:
     for r in roidbs[1:]:
       roidb.extend(r)
@@ -27,7 +26,6 @@ def combined_roidb(imdb_names):
     imdb = datasets.imdb.imdb(imdb_names, tmp.classes)
   else:
     imdb = get_imdb(imdb_names)
-  print ("imdb:",imdb.num_classes,imdb.image_index)
   return imdb, roidb
 
 def filter_roidb(roidb):
