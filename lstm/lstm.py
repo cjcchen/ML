@@ -44,7 +44,7 @@ class LSTM:
         self.target = target
         self.image_state = initial_state
 
-        #self.seqlen = tf.placeholder(tf.int32, [None], name="seq_len")
+        self.seqlen = tf.placeholder(tf.int32, [None], name="seq_len")
 
         self.summaries = []
 
@@ -84,11 +84,14 @@ class LSTM:
             _, self.initial_state = cell(image_embeddings, self.initial_state)
 
         state = self.initial_state
+        self.input_shape = tf.shape(inputs)[0]
+        self.input_shape1 = [tf.shape(inputs)[1]]*tf.shape(inputs)[0]
 
         outputs = []
         with tf.variable_scope("RNN"):
-            outputs, state = tf.nn.dynamic_rnn(cell, initial_state=state, sequence_length=[tf.shape(inputs)[1]]*config.batch_size, inputs=inputs)
-            #outputs, state = tf.nn.dynamic_rnn(cell, initial_state=state, sequence_length=self.seqlen, inputs=inputs)
+            #outputs, state = tf.nn.dynamic_rnn(cell, initial_state=state, sequence_length=[tf.shape(inputs)[1]]*tf.shape(inputs)[0], inputs=inputs)
+            #outputs, state = tf.nn.dynamic_rnn(cell, initial_state=state, sequence_length=[tf.shape(inputs)[1]]*tf.shape(inputs)[0], inputs=inputs)
+            outputs, state = tf.nn.dynamic_rnn(cell, initial_state=state, sequence_length=self.seqlen, inputs=inputs)
             #for time_step in range(config.num_steps):
             #    if time_step > 0: tf.get_variable_scope().reuse_variables()
             #    (cell_output, state) = cell(inputs[:, time_step, :], state)
@@ -103,14 +106,14 @@ class LSTM:
         logits = tf.nn.xw_plus_b(output, softmax_w, softmax_b)
      # Reshape logits to be a 3-D tensor for sequence loss
         logits = tf.reshape(logits, [-1, tf.shape(inputs)[1], vocab_size])
-        self.logits = logits
+        self.logits = tf.nn.softmax(logits)
 
-        print ("logit shape:",logits.shape)
+        print ("logit shape:",logits.shape, self.logits.shape)
         if is_training:
     # Use the contrib sequence loss and average over the batches
             loss = tf.contrib.seq2seq.sequence_loss( logits,
                 targets,
-                tf.ones([config.batch_size, tf.shape(inputs)[1]], dtype=tf.float32),
+                tf.ones([tf.shape(inputs)[0], tf.shape(inputs)[1]], dtype=tf.float32),
                 average_across_timesteps=False,
                 average_across_batch=True)
 

@@ -1,7 +1,8 @@
 import numpy as np
 import tensorflow as tf
 
-from model.nms_wrapper import nms
+from utils.nms_wrapper import nms
+from bbox import bbox_inv
 
 def gen_proposal(cls_score_pred, bbox_pred, image_raw_size, anchor_list, num_anchors):
     bois, scores = \
@@ -17,7 +18,6 @@ def gen_proposal(cls_score_pred, bbox_pred, image_raw_size, anchor_list, num_anc
 
 
 def get_proposal(cls_score_pred, bbox_pred, image_raw_size, anchor_list, num_anchors):
-    print ("get proposal:",anchor_list.shape, bbox_pred.shape, cls_score_pred.shape)
     nms_thresh = float(0.7)
 
     cls_score_pred = cls_score_pred[:,:,:,num_anchors:]
@@ -45,74 +45,6 @@ def get_proposal(cls_score_pred, bbox_pred, image_raw_size, anchor_list, num_anc
     bois = np.hstack((zeros,bois))
 
     return bois, scores
-
-def bbox_inv(anchors, delta_boxes, image_raw_size):
-
-    print ("anchors:",anchors.shape, delta_boxes.shape)
-    bbox = np.zeros((len(anchors), 4))
-
-    ws = anchors[:,2] - anchors[:,0] + 1.0
-    hs = anchors[:,3] - anchors[:,1] + 1.0
-    cx = anchors[:,0] + ws/2.0
-    cy = anchors[:,1] + hs/2.0
-
-    dx = delta_boxes[:,0]
-    dy = delta_boxes[:,1]
-    dw = delta_boxes[:,2]
-    dh = delta_boxes[:,3]
-
-    pre_x = dx *ws + cx
-    pre_y = dy *hs + cy
-    pre_w = np.exp(dw)*ws
-    pre_h = np.exp(dh)*hs
-
-    bbox[:,0] = pre_x - pre_w/2.0
-    bbox[:,1] = pre_y - pre_h/2.0
-    bbox[:,2] = pre_x + pre_w/2.0
-    bbox[:,3] = pre_y + pre_h/2.0
-
-    bbox[:,0] = np.maximum(0, np.minimum(bbox[:,0],image_raw_size[1]-1))
-    bbox[:,1] = np.maximum(0, np.minimum(bbox[:,1],image_raw_size[0]-1))
-    bbox[:,2] = np.maximum(0, np.minimum(bbox[:,2],image_raw_size[1]-1))
-    bbox[:,3] = np.maximum(0, np.minimum(bbox[:,3],image_raw_size[0]-1))
-
-    print ("bbox shape:",bbox[:,0].shape)
-
-    '''
-    for i, (anchor, delta) in enumerate(zip(anchors, delta_boxes)):
-        w = anchor[2]-anchor[0]+1.0
-        h = anchor[3]-anchor[1]+1.0
-        center_x = anchor[0] + w/2
-        center_y = anchor[1] + h/2
-        w = w.astype(delta_boxes.dtype)
-        h = h.astype(delta_boxes.dtype)
-        center_x = center_x.astype(delta_boxes.dtype)
-        center_y = center_y.astype(delta_boxes.dtype)
-
-        dx = delta[0]
-        dy = delta[1]
-        dw = delta[2]
-        dh = delta[3]
-
-        pre_x = dx*w + center_x
-        pre_y = dy*h + center_y
-        pre_w = np.exp(dw)*w
-        pre_h = np.exp(dh)*h
-
-        pre_x = pre_x.astype(delta_boxes.dtype)
-        pre_y = pre_y.astype(delta_boxes.dtype)
-        pre_w = pre_w.astype(delta_boxes.dtype)
-        pre_h = pre_h.astype(delta_boxes.dtype)
-        bbox[i]=(pre_x - pre_w/2.0, pre_y - pre_h/2.0, pre_x + pre_w/2.0, pre_y + pre_h/2.0)
-        bbox[i] = bbox[i].astype(delta_boxes.dtype)
-        bbox[i][0] = max(0, min(bbox[i][0],image_raw_size[1]-1))
-        bbox[i][1] = max(0, min(bbox[i][1],image_raw_size[0]-1))
-        bbox[i][2] = max(0, min(image_raw_size[1]-1, bbox[i][2]))
-        bbox[i][3] = max(0, min(image_raw_size[0]-1, bbox[i][3]))
-    '''
-
-    return bbox
-
 
 
 def get_top_n(bboxes, scores, top=0):

@@ -1,6 +1,4 @@
 
-from data_input import combined_roidb
-from data_input import filter_roidb
 from vgg16 import Vgg16
 from faster_rcnn import FasterRCNN
 import numpy as np
@@ -8,11 +6,22 @@ import tensorflow as tf
 import random
 import time
 import os
-from roi_data_layer.layer import RoIDataLayer
+import config
+from data_layer.layer import RoIDataLayer
+from data_layer.data_input import combined_roidb
+from data_layer.data_input import filter_roidb
 
-LEARNING_RATE = 0.001
-GAMMA = 0.1
-SAVE_STEP = 200
+tf.flags.DEFINE_string("model_path", "/home/tusimple/junechen//ml_data/model/faster_rcnn/model/",
+                    "Where the training/test data is stored.")
+tf.flags.DEFINE_string("log_path", "/home/tusimple/junechen//ml_data/model/faster_rcnn/log/",
+                    "Model output directory.")
+tf.flags.DEFINE_string("val_log_path", "/home/tusimple//junechen//ml_data/model/faster_rcnn/val_log/",
+                    "Model output directory.")
+tf.flags.DEFINE_string("gpu", "7",
+                    "Model output directory.")
+FLAGS = tf.flags.FLAGS
+
+os.environ["CUDA_VISIBLE_DEVICES"] = FLAGS.gpu
 
 class Solver():
     def __init__(self, imdb, roidb, val_imdb, val_roidb, pretrain_model):
@@ -21,32 +30,27 @@ class Solver():
         self.val_imdb = val_imdb
         self.val_roidb = val_roidb
         self.pretrain_model = pretrain_model
-        self.model_dir = "./model_log/"
-        self.log_dir = "./log/"
-        self.val_log_dir = "./log/"
+        self.model_dir = FLAGS.model_path
+        self.log_dir = FLAGS.log_path
+        self.val_log_dir = FLAGS.val_log_path
+
         self.cnn_net = Vgg16()
-
-
-        self.faster_rcnn = FasterRCNN(self.cnn_net, self.imdb.num_classes, batch_size=256, is_training=True)
-        self.faster_rcnn.build()
+        with tf.device("/gpu:0"):
+            self.faster_rcnn = FasterRCNN(self.cnn_net, self.imdb.num_classes, batch_size=config.BATCH_SIZE, is_training=True)
+            self.faster_rcnn.build(mode='train')
 
         variables = tf.global_variables()
         print ("all var:",variables)
 
-        self.val_faster_rcnn = FasterRCNN(self.cnn_net, self.imdb.num_classes, batch_size=256, is_training=False)
-        self.val_faster_rcnn.build()
-
-
-    def train_net(self,max_iters=70000):
+    def train_net(self,max_iters=700000):
         """Train a Faster R-CNN network."""
         roidb = filter_roidb(self.roidb)
 
 #allow_soft_placement=True,log_device_placement=True
-        tfconfig = tf.ConfigProto(allow_soft_placement=True,log_device_placement=True)
+        tfconfig = tf.ConfigProto(allow_soft_placement=True)
         tfconfig.gpu_options.allow_growth = True
 
         with tf.Session(config=tfconfig) as sess:
-            with tf.device("/gpu:0"):
                 self.initialize(sess, self.pretrain_model)
                 self.train_model(sess, max_iters)
 
@@ -96,21 +100,26 @@ class Solver():
         print ("save model:",os.path.join(self.model_dir,'cp'))
 
     def train_model(self, sess, max_iters):
-        print "train:", self.roidb
+        #print "train:", self.roidb
         # Build data layers for both training and validation set
         self.data_layer = RoIDataLayer(self.roidb, self.imdb.num_classes)
         self.val_data_layer = RoIDataLayer(self.val_roidb, self.val_imdb.num_classes)
         iter = 0
-        rate = LEARNING_RATE
+        rate = config.LEARNING_RATE
         next_step = [50000]
 
+        global_step = sess.run(self.faster_rcnn.global_op)
+        print ("start global step:",global_step)
         # Make sure the lists are not empty
         while iter < max_iters + 1:
-            if len(next_step) > 0 and iter == next_step[0]:
+            if global_step == 0:
+                self.faster_rcnn.assign_lr(sess, rate)
+
+            if len(next_step) > 0 and global_step == next_step[0]:
+                rate *= config.GAMMA
                 self.faster_rcnn.assign_lr(sess, rate)
                 next_step=next_step[1:]
                 print ("next step:",next_step)
-                rate *= GAMMA
 
             blobs = self.data_layer.forward()
 
@@ -119,11 +128,10 @@ class Solver():
             im_info = blobs['im_info']
 
             start_time = time.time()
-            loss, lr, global_step = self.faster_rcnn.train_step(sess, image, gt_boxes, im_info)
-            #loss, lr, global_step, summary_str = self.faster_rcnn.train_step(sess, image, gt_boxes, im_info)
+            loss, lr, global_step, summary_str = self.faster_rcnn.train_step(sess, image, gt_boxes, im_info)
             iter+=1
             diff = time.time() - start_time
-            print ("===== loss:",loss, "lr:",lr, "global step:",global_step, "time:",diff)
+            print ("===== loss:",loss, "lr:",lr, "global step:",global_step, "time:",diff, "step:",iter)
 
             if iter % 100 == 0:
                 self.writer.add_summary(summary_str, global_step)
@@ -132,14 +140,14 @@ class Solver():
                 summary.value.add(tag='lr', simple_value=lr)
                 self.writer.add_summary(summary, global_step)
 
-            if iter % SAVE_STEP == 0:
+            if iter % config.SAVE_STEP == 0:
                 self.save_model(sess, global_step)
 
                 val_blobs = self.val_data_layer.forward()
                 #print ("val_blobs['data']",val_blobs['data'], val_blobs['gt_boxes'])
                 #print (val_blobs['gt_boxes'])
                 #print (val_blobs['im_info'])
-                val_loss = self.val_faster_rcnn.get_loss(sess, val_blobs['data'], val_blobs['gt_boxes'], val_blobs['im_info'])
+                val_loss = self.faster_rcnn.get_loss(sess, val_blobs['data'], val_blobs['gt_boxes'], val_blobs['im_info'])
                 print ("val loss:",val_loss)
                 summary = tf.Summary()
                 summary.value.add(tag='loss', simple_value=loss)

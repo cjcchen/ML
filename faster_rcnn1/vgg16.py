@@ -8,8 +8,6 @@ import tensorflow.contrib.slim as slim
 
 VGG_MEAN = [103.939, 116.779, 123.68]
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "7"
-
 class Vgg16:
     def __init__(self):
         self._variables_to_fix={}
@@ -80,16 +78,16 @@ class Vgg16:
             sess.run(tf.assign(self._variables_to_fix[self._scope + '/conv1/conv1_1/weights:0'],
                                 tf.reverse(conv1_rgb, [2])))
 
-    def build(self, rgb, is_training = True):
+    def build(self, rgb, is_training = True, mode = 'train'):
         """
         load variable from npy to build the VGG
 
         :param rgb: rgb image [batch, height, width, 3] values scaled [0, 1]
         """
-        if is_training:
-            reuse = None
-        else:
+        if mode == 'val':
             reuse = True
+        else:
+            reuse = None
         with tf.variable_scope(self._scope, reuse = reuse):
             return self._image_to_head(rgb,is_training)
 

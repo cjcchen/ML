@@ -4,7 +4,6 @@ import tensorflow as tf
 import random
 
 from utils.cython_bbox import bbox_overlaps
-from model.config import cfg
 
 RPN_POSITIVE_WEIGHT = -1.0
 RPN_BBOX_INSIDE_WEIGHTS = (1.0, 1.0, 1.0, 1.0)
@@ -46,13 +45,8 @@ def gen_target_py(image, gt_box, image_raw_size, anchor_list = None, batch_size 
     image = image[0]
     gt_box = gt_box
     image_raw_size = image_raw_size
-    #print "box shape:",gt_box.shape
-
-    #anchor_list=get_anchors(image, image_raw_size, anchor_size, base_anchors)
-    #print ("anchor list:",anchor_list)
 
     label, bbox_label, in_weight, out_weight = get_label(anchor_list, gt_box, image_raw_size, batch_size)
-    #print label.shape, image.shape
     label=label.reshape([1,image.shape[0],image.shape[1],9]).astype(np.float32)
     bbox_target=bbox_label.reshape([1,image.shape[0], image.shape[1], -1]).astype(np.float32)
     in_weight=in_weight.reshape([1,image.shape[0], image.shape[1], -1]).astype(np.float32)
@@ -79,7 +73,6 @@ def get_label(anchor_list,gt_box, image_raw_size, batch_size):
 
     anchor_max_idx = over_lap_matrix.argmax(axis=1)
     over_lap_max = over_lap_matrix[np.arange(len(anchor_list)), anchor_max_idx ]
-    print ("over lap max shape:",over_lap_max.shape)
 
     label[over_lap_max >= RPN_POSITIVE_OVERLAP] = 1
     label[(over_lap_max < RPN_NEGATIVE_OVERLAP)] = 0
@@ -128,18 +121,15 @@ def get_label(anchor_list,gt_box, image_raw_size, batch_size):
 
     fg_num = int(RPN_FG_FACTOR * batch_size)
     fg_index = np.where(label == 1)[0]
-    #print ("fg num:",fg_num, len(fg_index))
     if len(fg_index) > fg_num:
         remove_index = np.random.choice(fg_index, size=(len(fg_index) - fg_num), replace=False)
         label[remove_index] = -1
 
     bg_num = batch_size - np.sum(label==1)
     bg_index = np.where(label == 0)[0]
-    #print("bg num:",len(bg_index), bg_num)
     if len(bg_index) > bg_num:
         remove_index = np.random.choice(bg_index, size=(len(bg_index) - bg_num), replace=False)
         label[remove_index] = -1
-        #print ("get:",remove_index, len(remove_index))
 
     in_weight = np.zeros([len(anchor_list),4], dtype=np.float32)
     out_weight = np.zeros([len(anchor_list),4], dtype=np.float32)
@@ -201,7 +191,6 @@ def get_label(anchor_list,gt_box, image_raw_size, batch_size):
                 out_weight[i] = [1.0/num_examples]*4
     '''
     bbox_target = np.vstack( (dx,dy,dw,dh) ).transpose()
-    #print ("1548:",label[1548])
     return label, bbox_target,in_weight, out_weight
 
 def in_image(anchor, image_raw_size):
@@ -209,7 +198,6 @@ def in_image(anchor, image_raw_size):
     y0 = anchor[1]
     x1 = anchor[2]
     y1 = anchor[3]
-    #print "in image:",x0, y0,x1,y1, image_raw_size[0], image_raw_size[1]
     return x0>=0 and y0 >=0 and x1 < image_raw_size[1] and y1 < image_raw_size[0]
 
 def over_lap(anchor, target):
@@ -225,7 +213,6 @@ def over_lap(anchor, target):
 
     if x0 > x3 or x1 < x2 or y0 > y3 or y1 < y2:
         return 0
-    #print "over lap:",anchor, target
     over_lap_area = (min(x3,x1)-max(x2,x0)+1)*(min(y3,y1)-max(y2,y0)+1)
     total_area = (y1-y0+1)*(x1-x0+1)+(y3-y2+1)*(x3-x2+1)-over_lap_area
     return float(over_lap_area)/total_area
@@ -301,8 +288,6 @@ if __name__ =='__main__':
 
     labels, bbox_target,inside_weights,outside_weights = gen_target(ik, gt, img_size)
 
-    #print "label:",labels.shape
-    #print "bbox:",bbox_target.shape
     #cls_loss = get_cls_loss(ik, labels)
     bbox_loss = get_bbox_loss(bbx, bbox_target, inside_weights, outside_weights)
     cls_loss = get_cls_loss(ik,labels)
@@ -317,21 +302,3 @@ if __name__ =='__main__':
             print "1:",np.where(d!=0)
             print d[d!=0]*1000
 
-'''
-images=np.zeros((1,51,39,18))
-feature=np.zeros([51,39,9*4])
-gt_boxes = np.array([(10,10,20,20,3),(45,45,60,75,4)])
-im_info = np.array([ 800.,  600.,    3.], dtype=np.int32)
-
-label, bbox_target, in_w, out_w=gen_target(images, gt_boxes, im_info)
-print "output:"
-print label.shape
-print bbox_target.shape
-print in_w.shape
-print out_w.shape
-#print bbox_target[bbox_target>0,:]
-#print np.where(label>0)
-
-print get_loss(feature, bbox_target, in_w, out_w)
-
-'''

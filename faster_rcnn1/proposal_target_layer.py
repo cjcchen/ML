@@ -52,7 +52,6 @@ def get_label(proposals, scores, gt_boxes, num_class, batch_size):
         bg_image_num = rois_per_image - fg_image_num
         replace = bg_image_num > len(bg_index)
 
-        #print ("fg num:",fg_image_num, "bg num:",bg_image_num, "replace:",replace)
         fg_index = np.random.choice(fg_index, size = fg_image_num, replace = False)
         bg_index = np.random.choice(bg_index, size = bg_image_num, replace = replace)
     elif len(fg_index) > 0:
@@ -116,6 +115,7 @@ def get_label(proposals, scores, gt_boxes, num_class, batch_size):
 
     label = label.reshape(-1, 1)
     all_scores = all_scores.reshape(-1)
+    print ("get target proposal:",label.shape)
     return label, all_rois, all_scores, bbox_target,in_weight, out_weight
 
 def over_lap(anchor, target):
@@ -131,10 +131,8 @@ def over_lap(anchor, target):
 
     if x0 > x3 or x1 < x2 or y0 > y3 or y1 < y2:
         return 0
-    #print "over lap:",anchor, target
     over_lap_area = (min(x3,x1)-max(x2,x0)+1)*(min(y3,y1)-max(y2,y0)+1)
     total_area = (y1-y0+1)*(x1-x0+1)+(y3-y2+1)*(x3-x2+1)-over_lap_area
-    #print ("over lap:",over_lap_area, total_area, float(over_lap_area)/total_area)
     return float(over_lap_area)/total_area
 
 if __name__ == '__main__':

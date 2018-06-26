@@ -39,8 +39,8 @@ class Image_Attention:
         self.emb_initializer = tf.random_uniform_initializer(minval=-1.0, maxval=1.0)
 
         self.config.vob_size = len(w2d)
-        self._null = w2d['<null>']
-        self._start = self.w2d['<start>']
+        self._null = w2d['<NULL>']
+        self._start = self.w2d['<START>']
 
     def build(self):
         image_feature = self.bn(self.feature)
