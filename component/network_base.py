@@ -9,6 +9,7 @@ class BaseNet:
     def __init__(self,pre_fix):
         self.pre_fix=pre_fix
         self.train_ops = []
+        self.session = None
     
     def set_para(self,model_path, log_path, lr):
         self.model_path = model_path
@@ -30,7 +31,14 @@ class BaseNet:
         self.session = session
 
     def load_session(self,checkpoint_dir):
-        self.saver = tf.train.Saver([v for v in tf.all_variables() if v.name.startswith(self.pre_fix+'/') ])
+
+        self.saver = tf.train.Saver([v for v in tf.all_variables() if v.name.startswith(self.pre_fix) ])
+
+        if self.session is None:
+            self.session = tf.Session()
+           #self.session = tf.Session(config=tf.ConfigProto(log_device_placement=True))
+
+
         try:
             print("Trying to restore last checkpoint ...:",checkpoint_dir)
             last_chk_path = tf.train.latest_checkpoint(checkpoint_dir=checkpoint_dir)
@@ -56,9 +64,9 @@ class BaseNet:
         return tf.group(*train_ops)
 
     def train(self, data_func, eval_func = None):
+        global_step = tf.Variable(initial_value=0, name='global_step', trainable=False)
         summary_op = component.get_collection_with_prefix(self.pre_fix)
 
-        global_step = tf.Variable(initial_value=0, name='global_step', trainable=False)
         merged_summary_op = tf.summary.merge(summary_op)
 
         train_op = self.get_train_op(global_step, self.lr)
@@ -78,10 +86,9 @@ class BaseNet:
             try:
                 feed_in = data_func(session, self)
                 i_global, _,summary_str, c_loss = session.run([global_step, train_op, merged_summary_op,self.loss], feed_dict=feed_in)
-                print "step:",i_global, "loss:",c_loss
                 summary_writer.add_summary(summary_str, i_global)
 
-                if i_global%10 == 0:
+                if i_global%100 == 0:
                     if eval_func is not None:
                         train_acc, eval_acc = eval_func(session, self)
 
@@ -93,6 +100,7 @@ class BaseNet:
                     summary.value.add(tag='cost', simple_value=c_loss)
                     summary_writer.add_summary(summary, i_global)
 
+                    print "step:",i_global, "lr:",self.lr, "loss:",c_loss
                     self.saver.save(session, save_path=self.save_path, global_step=i_global) 
                     print("Saved checkpoint.")
             except KeyboardInterrupt:

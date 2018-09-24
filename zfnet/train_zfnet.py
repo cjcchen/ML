@@ -31,12 +31,13 @@ def main(argv=None):
         train_x=tf.placeholder(tf.float32, [None,224,224,3])
         train_y=tf.placeholder(tf.int32, [None]) 
         with tf.variable_scope("zfnet", reuse=None):
-            model = zfnet.ZFNet(train_x,train_y,num_class=1000, mode='train')
+            model = zfnet.ZFNet(train_x,train_y,num_class=1000, mode='train', pre_fix="zfnet")
             model.set_para(FLAGS.save_dir, FLAGS.log_dir, FLAGS.lr)
         #with tf.variable_scope("zfnet", reuse=True):
         #    eval_model = zfnet.ZFNet(train_x,train_y,num_class=1000, mode='eval')
 
-    model.train(data_func)
+    with tf.variable_scope("zfnet", reuse=tf.AUTO_REUSE):
+        model.train(data_func)
 
 if __name__ == '__main__':
     tf.app.run()
